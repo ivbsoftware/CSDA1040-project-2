@@ -8,31 +8,24 @@ output:
     df_print: paged
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-
-# Init libraries
-
 ```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
 library("ggplot2")
 library("readr")
 library("RDSTK")
 library("Matrix")
 library("dplyr")
 library("forcats")
-
 set.seed(777)
 ```
-
-# Preparing data
-
-## Seting directory to current script (works in R Studio only)
-```{r}
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+# Seting directory to current script (works in R Studio only)
 #this.dir <- dirname(rstudioapi::getActiveDocumentContext()$path)
 #setwd(this.dir)
 ```
 
+# Preparing data
 ## Load and clean the customer complaints data
 
 The data should be downloaded from Kaggle's [Consumer Complaints Database](https://www.kaggle.com/sebastienverpile/consumercomplaintsdata/downloads/Consumer_Complaints.csv/1).
@@ -41,7 +34,13 @@ Loading and removing rows with no complaint narrative and unnecessary colimns:
 
 ```{r message=FALSE, warning=FALSE}
 df <- read_csv(file="../data/Consumer_Complaints.csv.zip",col_names = TRUE)
-df <- df[!is.na(df[,"Consumer complaint narrative"]),-c(1,7:18)]
+df <- df[,-c(1,7,9:18)]
+df <- df[!is.na(df[,"Consumer complaint narrative"]),] #199,970
+df <- df[!is.na(df[,"Company"]),] # no NA's
+df <- df[!is.na(df[,"Product"]),] # no NA's
+df <- df[!is.na(df[,"Issue"]),] # no NA's
+df <- df[!is.na(df[,"Sub-product"]),] # 147,788 total left
+df <- df[!is.na(df[,"Sub-issue"]),]   # 81,940 total left
 df
 ```
 
@@ -52,24 +51,65 @@ df$Product <- as.factor(df$Product)
 df$`Sub-product` <- as.factor(df$`Sub-product`)
 df$Issue <- as.factor(df$Issue)
 df$`Sub-issue` <- as.factor(df$`Sub-issue`)
+df$Company <- as.factor(df$Company)
 ```
 
-## Feature engineering
+# Feature engineering
 
-Creating 'complaints' dataframe having 30 most frequest "Issues":
+## Distribution of the most frequent "Issue" complaints
 
-```{r}
-most_freq_issues <- levels(fct_infreq(df$Issue))[1:30]
-complaints <- df[df$Issue %in% most_freq_issues,]
-complaints[,c('Issue','Consumer complaint narrative')]
-```
-
-Plotting distribution of the most frequent "Issues":
-
-```{r fig.height=9, fig.width=5.5, message=FALSE, warning=FALSE}
-ggplot() + aes(fct_infreq(complaints$Issue))+ 
+```{r fig.height=7, fig.width=5.5, message=FALSE, warning=FALSE}
+most_freq_issues_list <- levels(fct_infreq(df$Issue))[1:30]
+ggplot() + aes(fct_infreq(df[df$Issue %in% most_freq_issues_list,]$Issue))+ 
   geom_histogram(colour="black", fill="white", stat = "count")+
-  ylab("Issue Frequency")+
+  ylab("Issue Complaints Frequency")+
   xlab("Issue") + theme(axis.text.x = element_text(angle =90, hjust = 1))
 
+```
+
+\newpage
+## Distribution of the most frequent "Sub-issue" complaints
+
+```{r fig.height=7.5, fig.width=5.5, message=FALSE, warning=FALSE}
+most_freq_subissues_list <- levels(fct_infreq(df$`Sub-issue`))[1:30]
+ggplot() + aes(fct_infreq(df[df$`Sub-issue` %in% most_freq_subissues_list,]$`Sub-issue`))+ 
+  geom_histogram(colour="black", fill="white", stat = "count")+
+  ylab("Sub-Issue Complaints Frequency")+
+  xlab("Sub-Issue") + theme(axis.text.x = element_text(angle =90, hjust = 1))
+
+```
+
+\newpage
+## Distribution of the most frequent "Product" complaints
+
+```{r fig.height=7.5, fig.width=5.5, message=FALSE, warning=FALSE}
+most_freq_product_list <- levels(fct_infreq(df$Product))[1:30]
+ggplot() + aes(fct_infreq(df[df$Product %in% most_freq_product_list,]$Product))+ 
+  geom_histogram(colour="black", fill="white", stat = "count")+
+  ylab("Product Compliants Frequency")+
+  xlab("Product") + theme(axis.text.x = element_text(angle =90, hjust = 1))
+
+```
+
+\newpage
+## Distribution of the most frequent "Sub-product" complaints
+
+```{r fig.height=7.5, fig.width=5.5, message=FALSE, warning=FALSE}
+most_freq_subproduct_list <- levels(fct_infreq(df$`Sub-product`))[1:30]
+ggplot() + aes(fct_infreq(df[df$`Sub-product` %in% most_freq_subproduct_list,]$`Sub-product`))+ 
+  geom_histogram(colour="black", fill="white", stat = "count")+
+  ylab("Sub-Product Complaints Frequency")+
+  xlab("Sub-Product") + theme(axis.text.x = element_text(angle =90, hjust = 1))
+
+```
+
+\newpage
+## Distribution of the most frequent "Company" complaints
+
+```{r fig.height=7.5, fig.width=5.5, message=FALSE, warning=FALSE}
+most_freq_company_list <- levels(fct_infreq(df$Company))[1:30]
+ggplot() + aes(fct_infreq(df[df$Company %in% most_freq_company_list,]$Company))+ 
+  geom_histogram(colour="black", fill="white", stat = "count")+
+  ylab("Company Complaints Frequency")+
+  xlab("Company") + theme(axis.text.x = element_text(angle =90, hjust = 1))
 ```
