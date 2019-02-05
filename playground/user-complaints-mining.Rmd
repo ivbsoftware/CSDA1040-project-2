@@ -62,9 +62,8 @@ df$Company <- as.factor(df$Company)
 most_freq_issues_list <- levels(fct_infreq(df$Issue))[1:30]
 ggplot() + aes(fct_infreq(df[df$Issue %in% most_freq_issues_list,]$Issue))+ 
   geom_histogram(colour="black", fill="white", stat = "count")+
-  ylab("Issue Complaints Frequency")+
-  xlab("Issue") + theme(axis.text.x = element_text(angle =90, hjust = 1))
-
+  ylab("Issue Complaints Frequency") + xlab("")+
+  theme(axis.text.x = element_text(angle =90, hjust = 1))
 ```
 
 \newpage
@@ -74,9 +73,8 @@ ggplot() + aes(fct_infreq(df[df$Issue %in% most_freq_issues_list,]$Issue))+
 most_freq_subissues_list <- levels(fct_infreq(df$`Sub-issue`))[1:30]
 ggplot() + aes(fct_infreq(df[df$`Sub-issue` %in% most_freq_subissues_list,]$`Sub-issue`))+ 
   geom_histogram(colour="black", fill="white", stat = "count")+
-  ylab("Sub-Issue Complaints Frequency")+
-  xlab("Sub-Issue") + theme(axis.text.x = element_text(angle =90, hjust = 1))
-
+  ylab("Sub-Issue Complaints Frequency") + xlab("")+
+  theme(axis.text.x = element_text(angle =90, hjust = 1))
 ```
 
 \newpage
@@ -86,9 +84,8 @@ ggplot() + aes(fct_infreq(df[df$`Sub-issue` %in% most_freq_subissues_list,]$`Sub
 most_freq_product_list <- levels(fct_infreq(df$Product))[1:30]
 ggplot() + aes(fct_infreq(df[df$Product %in% most_freq_product_list,]$Product))+ 
   geom_histogram(colour="black", fill="white", stat = "count")+
-  ylab("Product Compliants Frequency")+
-  xlab("Product") + theme(axis.text.x = element_text(angle =90, hjust = 1))
-
+  ylab("Product Compliants Frequency") + xlab("")+
+  theme(axis.text.x = element_text(angle =90, hjust = 1))
 ```
 
 \newpage
@@ -98,9 +95,8 @@ ggplot() + aes(fct_infreq(df[df$Product %in% most_freq_product_list,]$Product))+
 most_freq_subproduct_list <- levels(fct_infreq(df$`Sub-product`))[1:30]
 ggplot() + aes(fct_infreq(df[df$`Sub-product` %in% most_freq_subproduct_list,]$`Sub-product`))+ 
   geom_histogram(colour="black", fill="white", stat = "count")+
-  ylab("Sub-Product Complaints Frequency")+
-  xlab("Sub-Product") + theme(axis.text.x = element_text(angle =90, hjust = 1))
-
+  ylab("Sub-Product Complaints Frequency") + xlab("")+
+  theme(axis.text.x = element_text(angle =90, hjust = 1))
 ```
 
 \newpage
@@ -110,6 +106,6 @@ ggplot() + aes(fct_infreq(df[df$`Sub-product` %in% most_freq_subproduct_list,]$`
 most_freq_company_list <- levels(fct_infreq(df$Company))[1:30]
 ggplot() + aes(fct_infreq(df[df$Company %in% most_freq_company_list,]$Company))+ 
   geom_histogram(colour="black", fill="white", stat = "count")+
-  ylab("Company Complaints Frequency")+
-  xlab("Company") + theme(axis.text.x = element_text(angle =90, hjust = 1))
+  ylab("Company Complaints Frequency") + xlab("")+
+  theme(axis.text.x = element_text(angle =90, hjust = 1))
 ```
