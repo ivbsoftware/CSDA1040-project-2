@@ -17,6 +17,9 @@ library("RDSTK")
 library("Matrix")
 library("dplyr")
 library("forcats")
+library(tm)
+library(stopwords)
+
 set.seed(777)
 ```
 ```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
@@ -108,4 +111,27 @@ ggplot() + aes(fct_infreq(df[df$Company %in% most_freq_company_list,]$Company))+
   geom_histogram(colour="black", fill="white", stat = "count")+
   ylab("Company Complaints Frequency") + xlab("")+
   theme(axis.text.x = element_text(angle =90, hjust = 1))
+```
+
+\newpage
+
+# Text Minig
+
+Building a corpus, which is a collection of text documents VectorSource specifies that the source is character vectors.After that, the corpus needs a couple of transformations, 
+including changing letters to lower case, removing punctuations/numbers 
+and removing stop words. The general English stop-word list is tailored 
+by adding "available" and "via" and removing "very".
+
+```{r}
+myCorpus <- Corpus(VectorSource(df$`Consumer complaint narrative`))
+myCorpus <- tm_map(myCorpus, removePunctuation)
+myCorpus <- tm_map(myCorpus, removeNumbers)
+```
+```{r}
+myStopwords <- c(stopwords(language="en", source="smart"), "available", "via", "the")
+idx <- which(myStopwords == "very")
+myStopwords <- myStopwords[-idx]
+myCorpus <- tm_map(myCorpus, stripWhitespace)
+myCorpus <- tm_map(myCorpus, removeWords, myStopwords)
+myStopwords
 ```
