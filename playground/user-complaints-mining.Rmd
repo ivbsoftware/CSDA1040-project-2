@@ -1,0 +1,75 @@
+---
+title: "User Complaints Mining"
+author: "gor Baranov, Michael Parravani, Ariana Biagi, Grace Tsai"
+date: "February 4, 2019"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Init libraries
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+library("ggplot2")
+library("readr")
+library("RDSTK")
+library("Matrix")
+library("dplyr")
+library("forcats")
+
+set.seed(777)
+```
+
+# Preparing data
+
+## Seting directory to current script (works in R Studio only)
+```{r}
+#this.dir <- dirname(rstudioapi::getActiveDocumentContext()$path)
+#setwd(this.dir)
+```
+
+## Load and clean the customer complaints data
+
+The data should be downloaded from Kaggle's [Consumer Complaints Database](https://www.kaggle.com/sebastienverpile/consumercomplaintsdata/downloads/Consumer_Complaints.csv/1).
+
+Loading and removing rows with no complaint narrative and unnecessary colimns:
+
+```{r message=FALSE, warning=FALSE}
+df <- read_csv(file="../data/Consumer_Complaints.csv.zip",col_names = TRUE)
+df <- df[!is.na(df[,"Consumer complaint narrative"]),-c(1,7:18)]
+df
+```
+
+Converting all but narrative columns to factors:
+
+```{r}
+df$Product <- as.factor(df$Product)
+df$`Sub-product` <- as.factor(df$`Sub-product`)
+df$Issue <- as.factor(df$Issue)
+df$`Sub-issue` <- as.factor(df$`Sub-issue`)
+```
+
+## Feature engineering
+
+Creating 'complaints' dataframe having 30 most frequest "Issues":
+
+```{r}
+most_freq_issues <- levels(fct_infreq(df$Issue))[1:30]
+complaints <- df[df$Issue %in% most_freq_issues,]
+complaints[,c('Issue','Consumer complaint narrative')]
+```
+
+Plotting distribution of the most frequent "Issues":
+
+```{r fig.height=9, fig.width=5.5, message=FALSE, warning=FALSE}
+ggplot() + aes(fct_infreq(complaints$Issue))+ 
+  geom_histogram(colour="black", fill="white", stat = "count")+
+  ylab("Issue Frequency")+
+  xlab("Issue") + theme(axis.text.x = element_text(angle =90, hjust = 1))
+
+```
