@@ -127,11 +127,12 @@ myCorpus <- Corpus(VectorSource(df$`Consumer complaint narrative`))
 myCorpus <- tm_map(myCorpus, removePunctuation)
 myCorpus <- tm_map(myCorpus, removeNumbers)
 ```
-```{r}
+
+```{r message=FALSE, warning=FALSE}
 myStopwords <- c(stopwords(language="en", source="smart"), "available", "via", "the")
 idx <- which(myStopwords == "very")
 myStopwords <- myStopwords[-idx]
 myCorpus <- tm_map(myCorpus, stripWhitespace)
 myCorpus <- tm_map(myCorpus, removeWords, myStopwords)
-myStopwords
+head(myStopwords, 100)
 ```
