@@ -119,8 +119,7 @@ ggplot() + aes(fct_infreq(df[df$Company %in% most_freq_company_list,]$Company))+
 
 Building a corpus, which is a collection of text documents VectorSource specifies that the source is character vectors.After that, the corpus needs a couple of transformations, 
 including changing letters to lower case, removing punctuations/numbers 
-and removing stop words. The general English stop-word list is tailored 
-by adding "available" and "via" and removing "very".
+and removing stop words. The general English stop-word list is tailored by adding "available" and "via".
 
 ```{r}
 myCorpus <- Corpus(VectorSource(df$`Consumer complaint narrative`))
