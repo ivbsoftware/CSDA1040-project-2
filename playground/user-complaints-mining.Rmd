@@ -19,9 +19,27 @@ library("dplyr")
 library("forcats")
 library(tm)
 library(stopwords)
+library(caTools)
 
 set.seed(777)
 ```
+
+```{r wrap-hook, include=FALSE}
+# Wrapping log text hook - https://github.com/yihui/knitr-examples/blob/master/077-wrap-output.Rmd
+library(knitr)
+hook_output = knit_hooks$get('output')
+knit_hooks$set(output = function(x, options) {
+  # this hook is used only when the linewidth option is not NULL
+  if (!is.null(n <- options$linewidth)) {
+    x = knitr:::split_lines(x)
+    # any lines wider than n should be wrapped
+    if (any(nchar(x) > n)) x = strwrap(x, width = n)
+    x = paste(x, collapse = '\n')
+  }
+  hook_output(x, options)
+})
+```
+
 ```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
 # Seting directory to current script (works in R Studio only)
 #this.dir <- dirname(rstudioapi::getActiveDocumentContext()$path)
@@ -36,14 +54,27 @@ The data should be downloaded from Kaggle's [Consumer Complaints Database](https
 Loading and removing rows with no complaint narrative and unnecessary colimns:
 
 ```{r message=FALSE, warning=FALSE}
-df <- read_csv(file="../data/Consumer_Complaints.csv.zip",col_names = TRUE)
-df <- df[,-c(1,7,9:18)]
-df <- df[!is.na(df[,"Consumer complaint narrative"]),] #199,970
-df <- df[!is.na(df[,"Company"]),] # no NA's
-df <- df[!is.na(df[,"Product"]),] # no NA's
-df <- df[!is.na(df[,"Issue"]),] # no NA's
-df <- df[!is.na(df[,"Sub-product"]),] # 147,788 total left
-df <- df[!is.na(df[,"Sub-issue"]),]   # 81,940 total left
+if(!file.exists("./user-complaints-mining/df.Rds")) {
+  df <- read_csv(file="../data/Consumer_Complaints.csv.zip",col_names = TRUE)
+  df <- df[,-c(1,7,9:18)]
+  df <- df[!is.na(df[,"Consumer complaint narrative"]),] #199,970
+  df <- df[!is.na(df[,"Company"]),] # no NA's
+  df <- df[!is.na(df[,"Product"]),] # no NA's
+  df <- df[!is.na(df[,"Issue"]),] # no NA's
+  df <- df[!is.na(df[,"Sub-product"]),] # 147,788 total left
+  df <- df[!is.na(df[,"Sub-issue"]),]   # 81,940 total left
+  
+  # Converting all but narrative columns to factors
+  df$Product <- as.factor(df$Product)
+  df$`Sub-product` <- as.factor(df$`Sub-product`)
+  df$Issue <- as.factor(df$Issue)
+  df$`Sub-issue` <- as.factor(df$`Sub-issue`)
+  df$Company <- as.factor(df$Company)
+  saveRDS(df, file = "./user-complaints-mining/df.Rds")
+  gc()
+} else {
+  df <- readRDS("./user-complaints-mining/df.Rds")
+}
 df
 ```
 
@@ -117,19 +148,51 @@ ggplot() + aes(fct_infreq(df[df$Company %in% most_freq_company_list,]$Company))+
 
 # Text Minig
 
-Building a corpus, which is a collection of text documents VectorSource specifies that the source is character vectors.After that, the corpus needs a couple of transformations, 
-including changing letters to lower case, removing punctuations/numbers 
-and removing stop words. The general English stop-word list is tailored by adding "available" and "via".
+## Split data into test and train sets
 
 ```{r}
-myCorpus <- Corpus(VectorSource(df$`Consumer complaint narrative`))
-myCorpus <- tm_map(myCorpus, removePunctuation)
-myCorpus <- tm_map(myCorpus, removeNumbers)
+set.seed(123)
+sample = sample.split(df$`Consumer complaint narrative`, SplitRatio = .5)
+train = subset(df, sample == TRUE)
+test  = subset(df, sample == FALSE)
 ```
 
+## Word analysis 
+
+Building a corpus, which is a collection of text documents VectorSource specifies that the source is character vectors.After that, the corpus needs a couple of transformations, 
+including changing letters to lower case, removing punctuations/numbers 
+and removing stop words. The general English stop-word list is tailored by adding some words specific to the documents in question.
+
+```{r message=FALSE, warning=FALSE, linewidth = 90}
+if(!file.exists("./user-complaints-mining/myCorpus.Rds")) {
+  myCorpus <- Corpus(VectorSource(train$`Consumer complaint narrative`))
+  myCorpus <- tm_map(myCorpus, removePunctuation)
+  myCorpus <- tm_map(myCorpus, removeNumbers)
+  myCorpus <- tm_map(myCorpus, tolower)
+  myStopwords <- c(stopwords(language="en", source="smart"), "xxxx", "xxxxxxxxxxxx")
+  myCorpus <- tm_map(myCorpus, removeWords, myStopwords)
+  myCorpus <- tm_map(myCorpus, stripWhitespace)
+  saveRDS(myCorpus, file = "./user-complaints-mining/myCorpus.Rds")
+  gc()
+} else {
+  myCorpus <- readRDS("./user-complaints-mining/myCorpus.Rds")
+}
+print(myCorpus[1:5]$content)
+```
+
+# Building a Document-Term Matrix
+
+This operation requiers 64GB of RAM. To avoid calculation, the pre-build myDtm object will be loaded from the file system. To recalculate it needs to be removed from the file system first.
+
 ```{r message=FALSE, warning=FALSE}
-myStopwords <- c(stopwords(language="en", source="smart"), "available", "via", "the")
-myCorpus <- tm_map(myCorpus, stripWhitespace)
-myCorpus <- tm_map(myCorpus, removeWords, myStopwords)
-head(myStopwords, 100)
+if(!file.exists("./user-complaints-mining/myDtm.Rds")) {
+  myDtm <- TermDocumentMatrix(myCorpus, control = list(minWordLength = 1))
+  rowTotals <- apply(myDtm , 1, sum) #Find the sum of words in each Document
+  myDtm <- myDtm[rowTotals > 0, ] #remove all docs without words
+  saveRDS(myDtm, file = "./user-complaints-mining/myDtm.Rds")
+  gc()
+} else {
+  myDtm <- readRDS("./user-complaints-mining/myDtm.Rds")
+}
+inspect(myDtm)
 ```
