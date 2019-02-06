@@ -25,7 +25,8 @@ set.seed(777)
 ```
 
 ```{r wrap-hook, include=FALSE}
-# Wrapping log text hook - https://github.com/yihui/knitr-examples/blob/master/077-wrap-output.Rmd
+# Wrapping long text hook - https://github.com/yihui/knitr-examples/blob/master/077-wrap-output.Rmd
+# See usage of print statement with linewidth atrribute in the chunk header.
 library(knitr)
 hook_output = knit_hooks$get('output')
 knit_hooks$set(output = function(x, options) {
@@ -169,7 +170,7 @@ if(!file.exists("./user-complaints-mining/myCorpus.Rds")) {
   myCorpus <- tm_map(myCorpus, removePunctuation)
   myCorpus <- tm_map(myCorpus, removeNumbers)
   myCorpus <- tm_map(myCorpus, tolower)
-  myStopwords <- c(stopwords(language="en", source="smart"), "xxxx", "xxxxxxxxxxxx")
+  myStopwords <- c(stopwords(language="en", source="smart"), "xxxx", "xxxxxxxxxxxx", "xxxxxxxx")
   myCorpus <- tm_map(myCorpus, removeWords, myStopwords)
   myCorpus <- tm_map(myCorpus, stripWhitespace)
   saveRDS(myCorpus, file = "./user-complaints-mining/myCorpus.Rds")
@@ -180,6 +181,20 @@ if(!file.exists("./user-complaints-mining/myCorpus.Rds")) {
 print(myCorpus[1:5]$content)
 ```
 
+
+### Steming
+```{r message=FALSE, warning=FALSE, linewidth = 90}
+dictCorpus <- myCorpus
+myCorpus <- tm_map(myCorpus, stemDocument)
+print(myCorpus[1:5]$content)
+```
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE, linewidth=90}
+### Stem completion - failed on out of memory, skipping for now
+myCorpus <- tm_map(myCorpus, stemCompletion, dictionary=dictCorpus)
+print(myCorpus[1:5]$content)
+```
+\newpage
 # Building a Document-Term Matrix
 
 This operation requiers 64GB of RAM. To avoid calculation, the pre-build myDtm object will be loaded from the file system. To recalculate it needs to be removed from the file system first.
