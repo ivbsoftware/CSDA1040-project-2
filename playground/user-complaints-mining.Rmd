@@ -127,7 +127,7 @@ ggplot() + aes(fct_infreq(df[df$Product %in% most_freq_product_list,]$Product))+
 ## Distribution of the most frequent "Sub-product" complaints
 
 ```{r fig.height=7.5, fig.width=5.5, message=FALSE, warning=FALSE}
-most_freq_subproduct_list <- levels(fct_infreq(df$`Sub-product`))[1:30]
+most_freq_subproduct_list <- levels(fct_infreq(df$`Sub-product`))
 ggplot() + aes(fct_infreq(df[df$`Sub-product` %in% most_freq_subproduct_list,]$`Sub-product`))+ 
   geom_histogram(colour="black", fill="white", stat = "count")+
   ylab("Sub-Product Complaints Frequency") + xlab("")+
@@ -210,4 +210,18 @@ if(!file.exists("./user-complaints-mining/myDtm.Rds")) {
   myDtm <- readRDS("./user-complaints-mining/myDtm.Rds")
 }
 inspect(myDtm)
+```
+
+\newpage
+## Frequent Terms and Association
+```{r}
+freq.terms <- findFreqTerms(myDtm, lowfreq=5)
+term.freq <- rowSums(as.matrix(myDtm))
+term.freq <- subset(term.freq, term.freq >= 5)
+```
+
+```{r figMFT, fig.height=5, fig.width=5.5, message=FALSE, warning=FALSE, fig.cap="30 Most Frequent Terms"}
+dfTerms <- data.frame(term = names(term.freq), freq = term.freq)
+ggplot(dfTerms[order(-dfTerms$freq),][1:30,], aes(x = reorder(term, freq), y = freq)) + 
+  geom_bar(stat = "identity") + xlab("Terms") + ylab("") + coord_flip()
 ```
