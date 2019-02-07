@@ -225,3 +225,20 @@ dfTerms <- data.frame(term = names(term.freq), freq = term.freq)
 ggplot(dfTerms[order(-dfTerms$freq),][1:30,], aes(x = reorder(term, freq), y = freq)) + 
   geom_bar(stat = "identity") + xlab("Terms") + ylab("") + coord_flip()
 ```
+
+## Which words are associated with term "loan"?
+```{r}
+findAssocs(myDtm, 'loan', 0.30)
+```
+\newpage 
+
+Building word cloud:
+
+```{r figCl1, fig.height=5.5, fig.width=5.5, message=FALSE, warning=FALSE, paged.print=FALSE, fig.cap="Words Cloud of Complaints"}
+library(wordcloud)
+m <- as.matrix(myDtm)
+v <- sort(rowSums(m), decreasing=TRUE)
+myNames <- names(v)
+d <- data.frame(word=myNames, freq=v)
+wordcloud(d$word, d$freq, min.freq=20, scale=c(4,.2), max.words = 200)
+```
