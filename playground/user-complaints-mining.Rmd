@@ -228,7 +228,7 @@ ggplot(dfTerms[order(-dfTerms$freq),][1:30,], aes(x = reorder(term, freq), y = f
 
 ## Which words are associated with term "loan"?
 ```{r}
-findAssocs(myDtm, 'loan', 0.30)
+findAssocs(myDtm, c('loan'), 0.35)
 ```
 \newpage 
 
@@ -241,4 +241,60 @@ v <- sort(rowSums(m), decreasing=TRUE)
 myNames <- names(v)
 d <- data.frame(word=myNames, freq=v)
 wordcloud(d$word, d$freq, min.freq=20, scale=c(4,.2), max.words = 200)
+```
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+# remove sparse terms
+tdm2 <- removeSparseTerms(myDtm, sparse = 0.9)
+m2 <- as.matrix(tdm2)
+
+# cluster terms
+distMatrix <- dist(scale(m2))
+fit <- hclust(distMatrix, method = "ward.D2")
+
+numClusters <- 5
+
+plot(fit)
+rect.hclust(fit, k = numClusters)
+m3 <- t(m2) # transpose the matrix to cluster documents
+k <- numClusters # number of clusters
+kmeansResult <- kmeans(m3, k)
+round(kmeansResult$centers, digits = 3) # cluster centers
+
+for (i in 1:k) {
+  cat(paste("cluster ", i, ": ", sep = ""))
+  s <- sort(kmeansResult$centers[i, ], decreasing = T)
+  cat(names(s)[1:8], "\n")
+}
+```
+\newpage
+
+## Building LDA model for the 'train' set of complaints
+
+```{r message=FALSE, warning=FALSE}
+library(topicmodels)
+dtm <- as.DocumentTermMatrix(myDtm)
+ui = unique(dtm$i) #array of unique row ids in 'train' set
+if(!file.exists("./user-complaints-mining/lda10.Rds")) {
+  df.new = df[ui,]
+  lda <- LDA(dtm.new, k = 7) # identify topics
+  saveRDS(lda, file = "./user-complaints-mining/lda10.Rds")
+  gc()
+} else {
+  lda <- readRDS("./user-complaints-mining/lda10.Rds")
+}  
+(term <- terms(lda, 10)) # first terms of every topic
+```
+
+\newpage
+## Show complaints correlation to topics in 'train' set
+
+```{r message=FALSE, warning=FALSE, linewidth = 90}
+topic <- topics(lda, 5, threshold=.15)
+for (i in c(1,55,500,333)) {
+  print (paste(" "))
+  print (paste("Complaint# ", i))
+  print(paste("Topics found: ", topic[i]))
+  print (train$`Consumer complaint narrative`[ui[i]])
+}
 ```
