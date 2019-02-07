@@ -1,0 +1,260 @@
+---
+title: "User Complaints Mining"
+author: "gor Baranov, Michael Parravani, Ariana Biagi, Grace Tsai"
+date: "February 4, 2019"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library("ggplot2")
+library("readr")
+library("RDSTK")
+library("Matrix")
+library("dplyr")
+library("forcats")
+library(tm)
+library(stopwords)
+library(caTools)
+
+set.seed(777)
+```
+
+```{r wrap-hook, include=FALSE}
+# Wrapping long text hook - https://github.com/yihui/knitr-examples/blob/master/077-wrap-output.Rmd
+# See usage of print statement with linewidth atrribute in the chunk header.
+library(knitr)
+hook_output = knit_hooks$get('output')
+knit_hooks$set(output = function(x, options) {
+  # this hook is used only when the linewidth option is not NULL
+  if (!is.null(n <- options$linewidth)) {
+    x = knitr:::split_lines(x)
+    # any lines wider than n should be wrapped
+    if (any(nchar(x) > n)) x = strwrap(x, width = n)
+    x = paste(x, collapse = '\n')
+  }
+  hook_output(x, options)
+})
+```
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+# Seting directory to current script (works in R Studio only)
+#this.dir <- dirname(rstudioapi::getActiveDocumentContext()$path)
+#setwd(this.dir)
+```
+
+# Preparing data
+## Load and clean the customer complaints data
+
+The data should be downloaded from Kaggle's [Consumer Complaints Database](https://www.kaggle.com/sebastienverpile/consumercomplaintsdata/downloads/Consumer_Complaints.csv/1).
+
+Loading and removing rows with no complaint narrative and unnecessary colimns:
+
+```{r message=FALSE, warning=FALSE}
+if(!file.exists("./user-complaints-mining/df.Rds")) {
+  df <- read_csv(file="../data/Consumer_Complaints.csv.zip",col_names = TRUE)
+  df <- df[,-c(1,7,9:18)]
+  df <- df[!is.na(df[,"Consumer complaint narrative"]),] #199,970
+  df <- df[!is.na(df[,"Company"]),] # no NA's
+  df <- df[!is.na(df[,"Product"]),] # no NA's
+  df <- df[!is.na(df[,"Issue"]),] # no NA's
+  df <- df[!is.na(df[,"Sub-product"]),] # 147,788 total left
+  df <- df[!is.na(df[,"Sub-issue"]),]   # 81,940 total left
+  
+  # Converting all but narrative columns to factors
+  df$Product <- as.factor(df$Product)
+  df$`Sub-product` <- as.factor(df$`Sub-product`)
+  df$Issue <- as.factor(df$Issue)
+  df$`Sub-issue` <- as.factor(df$`Sub-issue`)
+  df$Company <- as.factor(df$Company)
+  saveRDS(df, file = "./user-complaints-mining/df.Rds")
+  gc()
+} else {
+  df <- readRDS("./user-complaints-mining/df.Rds")
+}
+df
+```
+
+Converting all but narrative columns to factors:
+
+```{r}
+df$Product <- as.factor(df$Product)
+df$`Sub-product` <- as.factor(df$`Sub-product`)
+df$Issue <- as.factor(df$Issue)
+df$`Sub-issue` <- as.factor(df$`Sub-issue`)
+df$Company <- as.factor(df$Company)
+```
+
+# Feature engineering
+
+## Distribution of the most frequent "Issue" complaints
+
+```{r fig.height=7, fig.width=5.5, message=FALSE, warning=FALSE}
+most_freq_issues_list <- levels(fct_infreq(df$Issue))[1:30]
+ggplot() + aes(fct_infreq(df[df$Issue %in% most_freq_issues_list,]$Issue))+ 
+  geom_histogram(colour="black", fill="white", stat = "count")+
+  ylab("Issue Complaints Frequency") + xlab("")+
+  theme(axis.text.x = element_text(angle =90, hjust = 1))
+```
+
+\newpage
+## Distribution of the most frequent "Sub-issue" complaints
+
+```{r fig.height=7.5, fig.width=5.5, message=FALSE, warning=FALSE}
+most_freq_subissues_list <- levels(fct_infreq(df$`Sub-issue`))[1:30]
+ggplot() + aes(fct_infreq(df[df$`Sub-issue` %in% most_freq_subissues_list,]$`Sub-issue`))+ 
+  geom_histogram(colour="black", fill="white", stat = "count")+
+  ylab("Sub-Issue Complaints Frequency") + xlab("")+
+  theme(axis.text.x = element_text(angle =90, hjust = 1))
+```
+
+\newpage
+## Distribution of the most frequent "Product" complaints
+
+```{r fig.height=7.5, fig.width=5.5, message=FALSE, warning=FALSE}
+most_freq_product_list <- levels(fct_infreq(df$Product))[1:30]
+ggplot() + aes(fct_infreq(df[df$Product %in% most_freq_product_list,]$Product))+ 
+  geom_histogram(colour="black", fill="white", stat = "count")+
+  ylab("Product Compliants Frequency") + xlab("")+
+  theme(axis.text.x = element_text(angle =90, hjust = 1))
+```
+
+\newpage
+## Distribution of the most frequent "Sub-product" complaints
+
+```{r fig.height=7.5, fig.width=5.5, message=FALSE, warning=FALSE}
+most_freq_subproduct_list <- levels(fct_infreq(df$`Sub-product`))[1:30]
+ggplot() + aes(fct_infreq(df[df$`Sub-product` %in% most_freq_subproduct_list,]$`Sub-product`))+ 
+  geom_histogram(colour="black", fill="white", stat = "count")+
+  ylab("Sub-Product Complaints Frequency") + xlab("")+
+  theme(axis.text.x = element_text(angle =90, hjust = 1))
+```
+
+\newpage
+## Distribution of the most frequent "Company" complaints
+
+```{r fig.height=7.5, fig.width=5.5, message=FALSE, warning=FALSE}
+most_freq_company_list <- levels(fct_infreq(df$Company))[1:30]
+ggplot() + aes(fct_infreq(df[df$Company %in% most_freq_company_list,]$Company))+ 
+  geom_histogram(colour="black", fill="white", stat = "count")+
+  ylab("Company Complaints Frequency") + xlab("")+
+  theme(axis.text.x = element_text(angle =90, hjust = 1))
+```
+
+\newpage
+
+# Text Minig
+
+## Split data into test and train sets
+
+```{r}
+set.seed(123)
+sample = sample.split(df$`Consumer complaint narrative`, SplitRatio = .5)
+train = subset(df, sample == TRUE)
+test  = subset(df, sample == FALSE)
+```
+
+## Word analysis 
+
+Building a corpus, which is a collection of text documents VectorSource specifies that the source is character vectors.After that, the corpus needs a couple of transformations, including changing letters to lower case, removing punctuations/numbers 
+and removing stop words. The general English stop-word list is tailored by adding some words specific to the documents in question.
+
+```{r message=FALSE, warning=FALSE, linewidth = 90}
+if(!file.exists("./user-complaints-mining/myCorpus.Rds")) {
+  myCorpus <- Corpus(VectorSource(train$`Consumer complaint narrative`))
+  myCorpus <- tm_map(myCorpus, removePunctuation)
+  myCorpus <- tm_map(myCorpus, removeNumbers)
+  myCorpus <- tm_map(myCorpus, tolower)
+  
+  #[MP] added another set of X's below but didn't run it
+  myStopwords <- c(stopwords(language="en", source="smart"), "xxxx", "xxxxxxxxxxxx", "xxxxxxxx", "xxxxxxxxxxxxxxxx", "aaa") 
+  myCorpus <- tm_map(myCorpus, removeWords, myStopwords)
+  myCorpus <- tm_map(myCorpus, stripWhitespace)
+  saveRDS(myCorpus, file = "./user-complaints-mining/myCorpus.Rds")
+  gc()
+} else {
+  myCorpus <- readRDS("./user-complaints-mining/myCorpus.Rds")
+}
+print(myCorpus[1:5]$content)
+```
+
+
+### Steming
+```{r message=FALSE, warning=FALSE, linewidth = 90}
+dictCorpus <- myCorpus
+myCorpus <- tm_map(myCorpus, stemDocument)
+print(myCorpus[1:5]$content)
+```
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE, linewidth=90}
+### Stem completion - failed on out of memory, skipping for now
+myCorpus <- tm_map(myCorpus, stemCompletion, dictionary=dictCorpus)
+print(myCorpus[1:5]$content)
+```
+\newpage
+# Building a Document-Term Matrix
+
+This operation requiers 64GB of RAM. To avoid calculation, the pre-build myDtm object will be loaded from the file system. To recalculate it needs to be removed from the file system first.
+
+```{r message=FALSE, warning=FALSE}
+if(!file.exists("./user-complaints-mining/myDtm.Rds")) {
+  myDtm <- TermDocumentMatrix(myCorpus, control = list(minWordLength = 1))
+  rowTotals <- apply(myDtm , 1, sum) #Find the sum of words in each Document
+  myDtm <- myDtm[rowTotals > 0, ] #remove all docs without words
+  saveRDS(myDtm, file = "./user-complaints-mining/myDtm.Rds")
+  gc()
+} else {
+  myDtm <- readRDS("./user-complaints-mining/myDtm.Rds")
+}
+inspect(myDtm)
+```
+
+
+```{r}
+#Generate Clustering
+
+# remove sparse terms
+tdm2 <- removeSparseTerms(myDtm, sparse = 0.98)
+m2 <- as.matrix(tdm2)
+# cluster terms
+distMatrix <- dist(scale(m2))
+fit <- hclust(distMatrix, method = "ward.D")
+
+plot(fit)
+rect.hclust(fit, k = 7) # Cut into 7 clusters -> 7 product types we're looking to map to
+
+m3 <- t(m2) # transpose the matrix to cluster documents
+
+k <- 7 # number of clusters
+kmeansResult <- kmeans(m3, k)
+round(kmeansResult$centers, digits = 3) # cluster centers
+
+for (i in 1:k) {
+  cat(paste("cluster ", i, ": ", sep = ""))
+  s <- sort(kmeansResult$centers[i, ], decreasing = T)
+  cat(names(s)[1:8], "\n")
+}
+
+
+
+```
+```{r}
+#Topic Models
+
+#Using Correlated Topics Models
+ctm<- CTM(myDtm, k = 10)
+term <- terms(ctm, 10) # first 10 terms of every topic
+
+# first topic identified for every document (tweet)
+topic <- topics(ctm, 1)
+library(data.table)
+topics <- data.frame(df$Product, topic)
+
+qplot(date, ..count.., data=topics, geom="density",
+      fill=term[topic], position="stack")
+```
+
