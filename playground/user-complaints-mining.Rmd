@@ -170,7 +170,10 @@ if(!file.exists("./user-complaints-mining/myCorpus.Rds")) {
   myCorpus <- tm_map(myCorpus, removePunctuation)
   myCorpus <- tm_map(myCorpus, removeNumbers)
   myCorpus <- tm_map(myCorpus, tolower)
-  myStopwords <- c(stopwords(language="en", source="smart"), "xxxx", "xxxxxxxxxxxx", "xxxxxxxx")
+  myStopwords <- c(stopwords(language="en", source="smart"), 
+                  "xx", "xxxx", "xxxxxxxxxxxx", "xxxxxxxx",
+                  "told", "well", "month", "year"
+                   )
   myCorpus <- tm_map(myCorpus, removeWords, myStopwords)
   myCorpus <- tm_map(myCorpus, stripWhitespace)
   saveRDS(myCorpus, file = "./user-complaints-mining/myCorpus.Rds")
@@ -274,14 +277,16 @@ for (i in 1:k) {
 ```{r message=FALSE, warning=FALSE}
 library(topicmodels)
 dtm <- as.DocumentTermMatrix(myDtm)
+numTopics <- 30 # 7, 10 or 30
+topicsFileName <- paste("./user-complaints-mining/lda",numTopics,".Rds", sep = "") 
 ui = unique(dtm$i) #array of unique row ids in 'train' set
-if(!file.exists("./user-complaints-mining/lda10.Rds")) {
+if(!file.exists(topicsFileName)) {
   df.new = df[ui,]
-  lda <- LDA(dtm.new, k = 7) # identify topics
-  saveRDS(lda, file = "./user-complaints-mining/lda10.Rds")
+  lda <- LDA(dtm.new, k = numTopics) # identify topics
+  saveRDS(lda, file = topicsFileName)
   gc()
 } else {
-  lda <- readRDS("./user-complaints-mining/lda10.Rds")
+  lda <- readRDS(topicsFileName)
 }  
 (term <- terms(lda, 10)) # first terms of every topic
 ```
@@ -290,7 +295,7 @@ if(!file.exists("./user-complaints-mining/lda10.Rds")) {
 ## Show complaints correlation to topics in 'train' set
 
 ```{r message=FALSE, warning=FALSE, linewidth = 90}
-topic <- topics(lda, 5, threshold=.15)
+topic <- topics(lda, 5, threshold=.1)
 for (i in c(1,55,500,333)) {
   print (paste(" "))
   print (paste("Complaint# ", i))
