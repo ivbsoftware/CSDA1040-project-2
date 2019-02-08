@@ -79,16 +79,6 @@ if(!file.exists("./user-complaints-mining/df.Rds")) {
 df
 ```
 
-Converting all but narrative columns to factors:
-
-```{r}
-df$Product <- as.factor(df$Product)
-df$`Sub-product` <- as.factor(df$`Sub-product`)
-df$Issue <- as.factor(df$Issue)
-df$`Sub-issue` <- as.factor(df$`Sub-issue`)
-df$Company <- as.factor(df$Company)
-```
-
 # Feature engineering
 
 ## Distribution of the most frequent "Issue" complaints
@@ -163,6 +153,7 @@ test  = subset(df, sample == FALSE)
 Building a corpus, which is a collection of text documents VectorSource specifies that the source is character vectors.After that, the corpus needs a couple of transformations, 
 including changing letters to lower case, removing punctuations/numbers 
 and removing stop words. The general English stop-word list is tailored by adding some words specific to the documents in question.
+
 
 ```{r message=FALSE, warning=FALSE, linewidth = 90}
 if(!file.exists("./user-complaints-mining/myCorpus.Rds")) {
@@ -281,25 +272,99 @@ numTopics <- 30 # 7, 10 or 30
 topicsFileName <- paste("./user-complaints-mining/lda",numTopics,".Rds", sep = "") 
 ui = unique(dtm$i) #array of unique row ids in 'train' set
 if(!file.exists(topicsFileName)) {
-  df.new = df[ui,]
-  lda <- LDA(dtm.new, k = numTopics) # identify topics
-  saveRDS(lda, file = topicsFileName)
+  dtm.new = dtm[ui,]
+  train.lda <- LDA(dtm.new, k = numTopics) # identify topics
+  saveRDS(train.lda, file = topicsFileName)
   gc()
 } else {
-  lda <- readRDS(topicsFileName)
+  train.lda <- readRDS(topicsFileName)
 }  
-(term <- terms(lda, 10)) # first terms of every topic
+(train.terms <- terms(train.lda, 10)) # first terms of every topic
 ```
 
 \newpage
 ## Show complaints correlation to topics in 'train' set
 
 ```{r message=FALSE, warning=FALSE, linewidth = 90}
-topic <- topics(lda, 5, threshold=.1)
+train.topics <- topics(train.lda, 5, threshold=.1)
 for (i in c(1,55,500,333)) {
   print (paste(" "))
   print (paste("Complaint# ", i))
-  print(paste("Topics found: ", topic[i]))
+  print(paste("Topics found: ", train.topics[i]))
   print (train$`Consumer complaint narrative`[ui[i]])
 }
+```
+
+
+\newpage
+
+# Topics related to most frequent issues
+
+## Function definitions
+```{r}
+prepareCorpus <- function(textArr) {
+  myCorpus <- Corpus(VectorSource(textArr))
+  myCorpus <- tm_map(myCorpus, removePunctuation)
+  myCorpus <- tm_map(myCorpus, removeNumbers)
+  myCorpus <- tm_map(myCorpus, tolower)
+  myStopwords <- c(stopwords(language="en", source="smart"), 
+                  "xx", "xxxx", "xxxxxxxxxxxx", "xxxxxxxx")
+  myCorpus <- tm_map(myCorpus, removeWords, myStopwords)
+  myCorpus <- tm_map(myCorpus, stripWhitespace)
+  
+  return (myCorpus)
+}
+
+# Steming and reverse - long operation!
+doSteming <- function(myCorpus) {
+  #dictCorpus <- myCorpus
+  myCorpus <- tm_map(myCorpus, stemDocument)
+  #myCorpus <- tm_map(myCorpus, stemCompletion, dictionary=dictCorpus)
+  return (myCorpus)
+}
+
+getBestTopicNums <- function(arr, threshold) {
+  topNums <- sort(arr, index.return=TRUE, decreasing = TRUE)$ix
+  arr <- arr[arr>threshold]
+  return (topNums[1:length(arr)])
+}
+
+```
+
+\newpage
+
+## Define topics of first 3 'test' complaints
+
+```{r message=FALSE, warning=FALSE, linewidth = 90}
+numOfTests <- 3
+testThreshold = .2
+
+set.seed(15)
+randomIds <- sample(nrow(test),numOfTests)
+
+test.corpus <- prepareCorpus(test$`Consumer complaint narrative`[randomIds])
+test.corpus <- doSteming(test.corpus)
+test.dtm <- DocumentTermMatrix(test.corpus, control = list(minWordLength = 1))
+test.topics <- posterior(train.lda,test.dtm)
+
+for (i in 1:numOfTests) {
+  tops <- getBestTopicNums(test.topics$topics[i,], testThreshold)
+  print("----------")
+  print("Topics identified:")
+  print(train.terms[,tops])
+  print (paste("Original Issue: ", test[[randomIds[i],"Issue"]]))
+  print(paste("Complaint narrative:",test[[randomIds[i],"Consumer complaint narrative"]]))
+}
+```
+
+```{r eval=FALSE, include=FALSE}
+most_freq_issues_list <- levels(fct_infreq(df$Issue))[1:30]
+
+for (issueName in most_freq_issues_list) {
+  print(issueName)
+  compNarr <- subset(train, Issue == issueName)$`Consumer complaint narrative`
+}
+
+df[df$Issue %in% most_freq_issues_list,]$Issue
+
 ```
