@@ -20,6 +20,8 @@ library("forcats")
 library(tm)
 library(stopwords)
 library(caTools)
+library(tidytext)
+library(Rfast)
 
 set.seed(777)
 ```
@@ -145,6 +147,7 @@ ggplot() + aes(fct_infreq(df[df$Company %in% most_freq_company_list,]$Company))+
 set.seed(123)
 sample = sample.split(df$`Consumer complaint narrative`, SplitRatio = .5)
 train = subset(df, sample == TRUE)
+train$id <- c(1:nrow(train))
 test  = subset(df, sample == FALSE)
 ```
 
@@ -333,13 +336,48 @@ getBestTopicNums <- function(arr, threshold) {
 
 \newpage
 
-## Define topics of first 3 'test' complaints
+## Form a matrix of topic probability vectors for each issue
+
+```{r}
+issueTopicsProbMat <- matrix(NA,nrow = 30, ncol = 30)
+
+# for each issue
+for (i in 1:30) {
+  issueName <- most_freq_issues_list[i]
+  print(issueName)
+
+  # matrix of issue topics probabilities
+  issueids <- subset(train[,c("id")], train$Issue == issueName)
+  uiIds <- match(issueids$id, ui)
+  topicsProbabMatr <- train.lda@gamma[uiIds,] 
+  meanVec <- colMeans(topicsProbabMatr, na.rm = T)
+  #tops <- getBestTopicNums(meanVec, .05)
+  #print(train.terms[,tops])
+  #print (meanVec)
+  issueTopicsProbMat[i,] <- meanVec
+}
+```
+
+
+\newpage
+
+## Identify issues of random 'test' complaints
 
 ```{r message=FALSE, warning=FALSE, linewidth = 90}
-numOfTests <- 3
-testThreshold = .2
 
-set.seed(15)
+distInfo <- function(vec, mat) {
+  retVec <- vector(length = nrow(mat))
+  for (i in 1:nrow(mat)) {
+    retVec[i] <- dist(rbind(vec,mat[i,]))
+  }
+  retVec <- sort(retVec, index.return=TRUE)
+  return (retVec)
+}
+
+numOfTests <- 10
+testThreshold =0.1
+
+set.seed(122)
 randomIds <- sample(nrow(test),numOfTests)
 
 test.corpus <- prepareCorpus(test$`Consumer complaint narrative`[randomIds])
@@ -347,24 +385,20 @@ test.corpus <- doSteming(test.corpus)
 test.dtm <- DocumentTermMatrix(test.corpus, control = list(minWordLength = 1))
 test.topics <- posterior(train.lda,test.dtm)
 
+#test.topics$topics[2,]
 for (i in 1:numOfTests) {
+  
+  issuesFound <- distInfo (test.topics$topics[i,],issueTopicsProbMat)
+  
   tops <- getBestTopicNums(test.topics$topics[i,], testThreshold)
   print("----------")
-  print("Topics identified:")
-  print(train.terms[,tops])
+#  print("Topics identified:")
+ # print(train.terms[,tops])
+  print (paste("Inferred Issue: ", most_freq_issues_list[issuesFound$ix[1:3]]))
+  print("----------")
   print (paste("Original Issue: ", test[[randomIds[i],"Issue"]]))
+  print("----------")
   print(paste("Complaint narrative:",test[[randomIds[i],"Consumer complaint narrative"]]))
 }
-```
-
-```{r eval=FALSE, include=FALSE}
-most_freq_issues_list <- levels(fct_infreq(df$Issue))[1:30]
-
-for (issueName in most_freq_issues_list) {
-  print(issueName)
-  compNarr <- subset(train, Issue == issueName)$`Consumer complaint narrative`
-}
-
-df[df$Issue %in% most_freq_issues_list,]$Issue
 
 ```
