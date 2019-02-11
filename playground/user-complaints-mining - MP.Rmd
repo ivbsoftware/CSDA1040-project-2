@@ -20,6 +20,8 @@ library("forcats")
 library(tm)
 library(stopwords)
 library(caTools)
+library(tidytext)
+library(Rfast)
 
 set.seed(777)
 ```
@@ -79,16 +81,6 @@ if(!file.exists("./user-complaints-mining/df.Rds")) {
 df
 ```
 
-Converting all but narrative columns to factors:
-
-```{r}
-df$Product <- as.factor(df$Product)
-df$`Sub-product` <- as.factor(df$`Sub-product`)
-df$Issue <- as.factor(df$Issue)
-df$`Sub-issue` <- as.factor(df$`Sub-issue`)
-df$Company <- as.factor(df$Company)
-```
-
 # Feature engineering
 
 ## Distribution of the most frequent "Issue" complaints
@@ -127,7 +119,7 @@ ggplot() + aes(fct_infreq(df[df$Product %in% most_freq_product_list,]$Product))+
 ## Distribution of the most frequent "Sub-product" complaints
 
 ```{r fig.height=7.5, fig.width=5.5, message=FALSE, warning=FALSE}
-most_freq_subproduct_list <- levels(fct_infreq(df$`Sub-product`))[1:30]
+most_freq_subproduct_list <- levels(fct_infreq(df$`Sub-product`))
 ggplot() + aes(fct_infreq(df[df$`Sub-product` %in% most_freq_subproduct_list,]$`Sub-product`))+ 
   geom_histogram(colour="black", fill="white", stat = "count")+
   ylab("Sub-Product Complaints Frequency") + xlab("")+
@@ -155,13 +147,16 @@ ggplot() + aes(fct_infreq(df[df$Company %in% most_freq_company_list,]$Company))+
 set.seed(123)
 sample = sample.split(df$`Consumer complaint narrative`, SplitRatio = .5)
 train = subset(df, sample == TRUE)
+train$id <- c(1:nrow(train))
 test  = subset(df, sample == FALSE)
 ```
 
 ## Word analysis 
 
-Building a corpus, which is a collection of text documents VectorSource specifies that the source is character vectors.After that, the corpus needs a couple of transformations, including changing letters to lower case, removing punctuations/numbers 
+Building a corpus, which is a collection of text documents VectorSource specifies that the source is character vectors.After that, the corpus needs a couple of transformations, 
+including changing letters to lower case, removing punctuations/numbers 
 and removing stop words. The general English stop-word list is tailored by adding some words specific to the documents in question.
+
 
 ```{r message=FALSE, warning=FALSE, linewidth = 90}
 if(!file.exists("./user-complaints-mining/myCorpus.Rds")) {
@@ -169,9 +164,10 @@ if(!file.exists("./user-complaints-mining/myCorpus.Rds")) {
   myCorpus <- tm_map(myCorpus, removePunctuation)
   myCorpus <- tm_map(myCorpus, removeNumbers)
   myCorpus <- tm_map(myCorpus, tolower)
-  
-  #[MP] added another set of X's below but didn't run it
-  myStopwords <- c(stopwords(language="en", source="smart"), "xxxx", "xxxxxxxxxxxx", "xxxxxxxx", "xxxxxxxxxxxxxxxx", "aaa") 
+  myStopwords <- c(stopwords(language="en", source="smart"), 
+                  "xx", "xxxx", "xxxxxxxxxxxx", "xxxxxxxx",
+                  "told", "well", "month", "year"
+                   )
   myCorpus <- tm_map(myCorpus, removeWords, myStopwords)
   myCorpus <- tm_map(myCorpus, stripWhitespace)
   saveRDS(myCorpus, file = "./user-complaints-mining/myCorpus.Rds")
@@ -213,23 +209,52 @@ if(!file.exists("./user-complaints-mining/myDtm.Rds")) {
 inspect(myDtm)
 ```
 
-
+\newpage
+## Frequent Terms and Association
 ```{r}
-#Generate Clustering
+freq.terms <- findFreqTerms(myDtm, lowfreq=5)
+term.freq <- rowSums(as.matrix(myDtm))
+term.freq <- subset(term.freq, term.freq >= 5)
+```
 
+```{r figMFT, fig.height=5, fig.width=5.5, message=FALSE, warning=FALSE, fig.cap="30 Most Frequent Terms"}
+dfTerms <- data.frame(term = names(term.freq), freq = term.freq)
+ggplot(dfTerms[order(-dfTerms$freq),][1:30,], aes(x = reorder(term, freq), y = freq)) + 
+  geom_bar(stat = "identity") + xlab("Terms") + ylab("") + coord_flip()
+```
+
+## Which words are associated with term "loan"?
+```{r}
+findAssocs(myDtm, c('loan'), 0.35)
+```
+\newpage 
+
+Building word cloud:
+
+```{r figCl1, fig.height=5.5, fig.width=5.5, message=FALSE, warning=FALSE, paged.print=FALSE, fig.cap="Words Cloud of Complaints"}
+library(wordcloud)
+m <- as.matrix(myDtm)
+v <- sort(rowSums(m), decreasing=TRUE)
+myNames <- names(v)
+d <- data.frame(word=myNames, freq=v)
+wordcloud(d$word, d$freq, min.freq=20, scale=c(4,.2), max.words = 200)
+```
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
 # remove sparse terms
-tdm2 <- removeSparseTerms(myDtm, sparse = 0.98)
+tdm2 <- removeSparseTerms(myDtm, sparse = 0.9)
 m2 <- as.matrix(tdm2)
+
 # cluster terms
 distMatrix <- dist(scale(m2))
-fit <- hclust(distMatrix, method = "ward.D")
+fit <- hclust(distMatrix, method = "ward.D2")
+
+numClusters <- 5
 
 plot(fit)
-rect.hclust(fit, k = 7) # Cut into 7 clusters -> 7 product types we're looking to map to
-
+rect.hclust(fit, k = numClusters)
 m3 <- t(m2) # transpose the matrix to cluster documents
-
-k <- 7 # number of clusters
+k <- numClusters # number of clusters
 kmeansResult <- kmeans(m3, k)
 round(kmeansResult$centers, digits = 3) # cluster centers
 
@@ -238,23 +263,263 @@ for (i in 1:k) {
   s <- sort(kmeansResult$centers[i, ], decreasing = T)
   cat(names(s)[1:8], "\n")
 }
-
-
-
 ```
+\newpage
+
+## Building LDA model for the 'train' set of complaints
+
+```{r message=FALSE, warning=FALSE}
+library(topicmodels)
+dtm <- as.DocumentTermMatrix(myDtm)
+numTopics <- 30 # 7, 10 or 30
+topicsFileName <- paste("./user-complaints-mining/lda",numTopics,".Rds", sep = "") 
+ui = unique(dtm$i) #array of unique row ids in 'train' set
+if(!file.exists(topicsFileName)) {
+  dtm.new = dtm[ui,]
+  train.lda <- LDA(dtm.new, k = numTopics) # identify topics
+  saveRDS(train.lda, file = topicsFileName)
+  gc()
+} else {
+  train.lda <- readRDS(topicsFileName)
+}  
+(train.terms <- terms(train.lda, 10)) # first terms of every topic
+```
+
+\newpage
+## Show complaints correlation to topics in 'train' set
+
+```{r message=FALSE, warning=FALSE, linewidth = 90}
+train.topics <- topics(train.lda, 5, threshold=.1)
+for (i in c(1,55,500,333)) {
+  print (paste(" "))
+  print (paste("Complaint# ", i))
+  print(paste("Topics found: ", train.topics[i]))
+  print (train$`Consumer complaint narrative`[ui[i]])
+}
+```
+
+
+\newpage
+
+# Topics related to most frequent issues
+
+## Function definitions
 ```{r}
-#Topic Models
+prepareCorpus <- function(textArr) {
+  myCorpus <- Corpus(VectorSource(textArr))
+  myCorpus <- tm_map(myCorpus, removePunctuation)
+  myCorpus <- tm_map(myCorpus, removeNumbers)
+  myCorpus <- tm_map(myCorpus, tolower)
+  myStopwords <- c(stopwords(language="en", source="smart"), 
+                  "xx", "xxxx", "xxxxxxxxxxxx", "xxxxxxxx")
+  myCorpus <- tm_map(myCorpus, removeWords, myStopwords)
+  myCorpus <- tm_map(myCorpus, stripWhitespace)
+  
+  return (myCorpus)
+}
 
-#Using Correlated Topics Models
-ctm<- CTM(myDtm, k = 10)
-term <- terms(ctm, 10) # first 10 terms of every topic
+# Steming and reverse - long operation!
+doSteming <- function(myCorpus) {
+  #dictCorpus <- myCorpus
+  myCorpus <- tm_map(myCorpus, stemDocument)
+  #myCorpus <- tm_map(myCorpus, stemCompletion, dictionary=dictCorpus)
+  return (myCorpus)
+}
 
-# first topic identified for every document (tweet)
-topic <- topics(ctm, 1)
-library(data.table)
-topics <- data.frame(df$Product, topic)
+getBestTopicNums <- function(arr, threshold) {
+  topNums <- sort(arr, index.return=TRUE, decreasing = TRUE)$ix
+  arr <- arr[arr>threshold]
+  return (topNums[1:length(arr)])
+}
 
-qplot(date, ..count.., data=topics, geom="density",
-      fill=term[topic], position="stack")
 ```
+
+\newpage
+
+## Form a matrix of topic probability vectors for each issue
+
+```{r}
+issueTopicsProbMat <- matrix(NA,nrow = 30, ncol = 30)
+
+# for each issue
+for (i in 1:30) {
+  issueName <- most_freq_issues_list[i]
+  print(issueName)
+
+  # matrix of issue topics probabilities
+  issueids <- subset(train[,c("id")], train$Issue == issueName)
+  uiIds <- match(issueids$id, ui)
+  topicsProbabMatr <- train.lda@gamma[uiIds,] 
+  meanVec <- colMeans(topicsProbabMatr, na.rm = T)
+  #tops <- getBestTopicNums(meanVec, .05)
+  #print(train.terms[,tops])
+  #print (meanVec)
+  issueTopicsProbMat[i,] <- meanVec
+}
+```
+
+
+\newpage
+
+## Identify issues of random 'test' complaints
+
+```{r message=FALSE, warning=FALSE, linewidth = 90}
+
+distInfo <- function(vec, mat) {
+  retVec <- vector(length = nrow(mat))
+  for (i in 1:nrow(mat)) {
+    retVec[i] <- dist(rbind(vec,mat[i,]))
+  }
+  retVec <- sort(retVec, index.return=TRUE)
+  return (retVec)
+}
+
+numOfTests <- 10
+testThreshold =0.1
+
+set.seed(122)
+randomIds <- sample(nrow(test),numOfTests)
+
+test.corpus <- prepareCorpus(test$`Consumer complaint narrative`[randomIds])
+test.corpus <- doSteming(test.corpus)
+test.dtm <- DocumentTermMatrix(test.corpus, control = list(minWordLength = 1))
+test.topics <- posterior(train.lda,test.dtm)
+
+#test.topics$topics[2,]
+for (i in 1:numOfTests) {
+  
+  issuesFound <- distInfo (test.topics$topics[i,],issueTopicsProbMat)
+  
+  tops <- getBestTopicNums(test.topics$topics[i,], testThreshold)
+  print("----------")
+#  print("Topics identified:")
+ # print(train.terms[,tops])
+  print (paste("Inferred Issue: ", most_freq_issues_list[issuesFound$ix[1:3]]))
+  print("----------")
+  print (paste("Original Issue: ", test[[randomIds[i],"Issue"]]))
+  print("----------")
+  print(paste("Complaint narrative:",test[[randomIds[i],"Consumer complaint narrative"]]))
+}
+
+```
+
+#Trial of RandomForest model as per link below
+https://github.com/krishna7189/Rcodeeasy/blob/master/Analytics%20Vidya%20-%20Author%20Identification%20Challenge
+
+##Prepare Train & Test DFs
+```{r message=FALSE, warning=FALSE, linewidth = 90}
+#starting with original Train/Test split
+#prepare Train & Test data
+library(tidytext)
+library(reshape)
+
+#define sparcity allowance
+sparce.pct<-0.90 #picked a low number so my computer could process dataset. With more memory, this number could be higher
+train.corpus<-prepareCorpus(train$`Consumer complaint narrative`)
+train.corpus <- doSteming(train.corpus)
+train.dtm <- DocumentTermMatrix(train.corpus, control = list(minWordLength = 1))
+train.dtm<-removeSparseTerms(train.dtm,sparce.pct)
+
+#put into dataframe using tidytext package
+train.dtm.tidy<-tidy(train.dtm)
+train.dtm.tidy<-as.data.frame(train.dtm.tidy)
+
+#have to remane column to contain caps so we can do the left join later
+colnames(train.dtm.tidy)[1]<-"documentID"
+train.dtm.DF<-cast(train.dtm.tidy, documentID ~ term)
+
+head(train.dtm.DF)
+
+
+train.dtm.DF$documentID<-as.integer(train.dtm.DF$documentID)
+train.dtm.DF<-as.data.frame(train.dtm.DF)
+train<-as.data.frame(train)
+#add a sequence to the original data in order to left-join to new dataset
+train$ID <- seq.int(nrow(train))
+
+#left join the original train to dtm df
+train.df<-left_join(train, train.dtm.DF, by = c("ID"="documentID"))
+
+train.df<-train.df[,!names(train.df) %in% c("Product","Sub-product","Sub-issue","Consumer complaint narrative","Company","ID","document")]
+tmp1<-scale(train.df[,!names(train.df) %in% c("Issue")])
+tmp1<-as.data.frame(tmp1)
+train.df<-cbind(train.df$Issue,tmp1)
+colnames(train.df)[1]<-"Issue"
+
+
+test.corpus<-prepareCorpus(test$`Consumer complaint narrative`)
+test.corpus <- doSteming(test.corpus)
+test.dtm <- DocumentTermMatrix(test.corpus, control = list(minWordLength = 1))
+test.dtm<-removeSparseTerms(test.dtm,sparce.pct)
+
+test.dtm.tidy<-tidy(test.dtm)
+test.dtm.tidy<-as.data.frame(test.dtm.tidy)
+
+colnames(test.dtm.tidy)[1]<-"documentID"
+test.dtm.DF<-cast(test.dtm.tidy, documentID ~ term)
+
+head(test.dtm.DF)
+
+test.dtm.DF$documentID<-as.integer(test.dtm.DF$documentID)
+test.dtm.DF<-as.data.frame(test.dtm.DF)
+test<-as.data.frame(test)
+#add a sequence to the original data
+test$ID <- seq.int(nrow(test))
+#left join the original test to dtm df
+
+#test.df<-merge(x=test,y=test.dtm.DF, by.x = c("document"), by.y = c("ID"),all.x = TRUE)
+test.df<-left_join(test, test.dtm.DF, by = c("ID"="documentID"))
+
+test.df<-test.df[,!names(test.df) %in% c("Product","Sub-product","Sub-issue","Consumer complaint narrative","Company","ID","document")]
+tmp<-scale(test.df[,!names(test.df) %in% c("Issue")])
+tmp<-as.data.frame(tmp)
+cbind(test.df$Issue,tmp)
+colnames(test.df)[1]<-"Issue"
+
+```
+#Models
+##Decision Tree
+```{r message=FALSE, warning=FALSE, linewidth = 90}
+library(C50)
+
+## Control for C5.0 Model
+C5.0Control(subset=TRUE,bands=2,winnow=TRUE,noGlobalPruning=FALSE,CF=0.25,minCases=2,label="C5.0 Outcome")## Train Model using C5.0
+
+##Train the Data
+train.c50=C5.0(train.df[,-which(colnames(train.df)=="Issue")],train.df$Issue,trials=10,rules=FALSE,control=C5.0Control(),costs=NULL)
+     ## Variable Importance Measure
+#C5imp(train.c50,metric="usage",pct=TRUE)## Lower % Usage variables can be dicarded and the Train function is re-run to get better accuracy
+#summary(train.c50) ## Check the percentage of accuracy of the model## Predict on the TEST data using trained Model
+     ##Retraining Using higher Overall % Variables
+#Retrain.c50=C5.0(Train_AVTM[,c("articl","googl","note","number")],Train_AVTM$Author,trials=10,rules=FALSE,control=C5.0Control(),costs=NULL)
+
+##Prediction on Test Data and Train Data
+testPred.c50=predict(object=train.c50,newdata=test.df[,-which(colnames(train.df)=="Issue")],trials=1,type="class")
+trainPred.c50<-predict(train.c50,train.df[,-which(colnames(train.df)=="Issue")],trials=1,type="class")
+
+##Misclassification Matrix
+MisClassTest<-table("Predict"=testPred.c50,"Actual"=test.df$Issue)  ## Test Data Prediction
+MisClassTrain<-table("Predict"=trainPred.c50,"Actual"=train.df$Issue)   ## Train Data Prediction
+  
+##Accuracy based on Acceptance criteria
+accuracyC50<-(100-mean(c((nrow(test.df)-sum(diag(MisClassTest)))/nrow(test.df)),(nrow(train.df)-sum(diag(MisClassTrain)))/nrow(train.df)))
+accuracyC50
+
+```
+
+
+
+##Random Forest Model
+```{r message=FALSE, warning=FALSE, linewidth = 90}
+
+library(party)
+
+##Train the model
+Train.RandomForestEnsemble<-cforest(Issue~.,data=train.df,control=cforest_unbiased(ntree=4))
+
+
+```
+
+
+
 
