@@ -2,3 +2,5 @@ data/Consumer_Complaints.csv
 data/consumercomplaintsdata.zip
 data/Consumer_Complaints.csv.zip
 playground/user-complaints-mining - Copy.Rmd
+playground/user-complaints-mining/todelete/
+playground/user-complaints-mining/lda3.Rds

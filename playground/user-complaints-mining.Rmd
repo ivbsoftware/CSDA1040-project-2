@@ -86,8 +86,8 @@ df
 ## Distribution of the most frequent "Issue" complaints
 
 ```{r fig.height=7, fig.width=5.5, message=FALSE, warning=FALSE}
-most_freq_issues_list <- levels(fct_infreq(df$Issue))[1:30]
-ggplot() + aes(fct_infreq(df[df$Issue %in% most_freq_issues_list,]$Issue))+ 
+full_sorted_issues_list <- levels(fct_infreq(df$Issue))
+ggplot() + aes(fct_infreq(df[df$Issue %in% full_sorted_issues_list[1:30],]$Issue))+ 
   geom_histogram(colour="black", fill="white", stat = "count")+
   ylab("Issue Complaints Frequency") + xlab("")+
   theme(axis.text.x = element_text(angle =90, hjust = 1))
@@ -141,14 +141,19 @@ ggplot() + aes(fct_infreq(df[df$Company %in% most_freq_company_list,]$Company))+
 
 # Text Minig
 
-## Split data into test and train sets
+## Split data into test and train sets for Issue prediction
 
 ```{r}
+issuesToPredict <- 12
+
+df$issueId <- match(df$Issue, full_sorted_issues_list)
+df_issues <- df[df$issueId <= issuesToPredict,]
+
 set.seed(123)
-sample = sample.split(df$`Consumer complaint narrative`, SplitRatio = .5)
-train_full = subset(df, sample == TRUE)
+sample = sample.split(df_issues$`Consumer complaint narrative`, SplitRatio = .5)
+train_full = subset(df_issues, sample == TRUE)
 train_full$oid <- c(1:nrow(train_full))
-test  = subset(df, sample == FALSE)
+test  = subset(df_issues, sample == FALSE)
 ```
 
 ## Distribution of the text word count
@@ -167,7 +172,7 @@ ggplot() + aes(train_full$wordcount)+ geom_histogram(binwidth=10, colour="black"
 
 ```{r}
 train <- train_full[(train_full$wordcount >= stats[["1st Qu."]] & train_full$wordcount <= stats[["3rd Qu."]]),]
-train <- sample_n(train, 20000)
+train <- sample_n(train, 15000)
 train$id <- c(1:nrow(train))
 ```
 
@@ -216,7 +221,7 @@ print(myCorpus[1:5]$content)
 \newpage
 # Building a Document-Term Matrix
 
-This operation requiers 64GB of RAM. To avoid calculation, the pre-build myDtm object will be loaded from the file system. To recalculate it needs to be removed from the file system first.
+This operation is resource and time consuming. To avoid calculation, the pre-build myDtm object will be loaded from the file system. To recalculate it needs to be removed from the file system first.
 
 ```{r message=FALSE, warning=FALSE}
 if(!file.exists("./user-complaints-mining/myDtm.Rds")) {
@@ -292,7 +297,7 @@ train.topics <- topics(train.lda, 5, threshold=.005)
 for (i in c(1,55,500,333)) {
   print (paste(" "))
   print (paste("Complaint# ", i))
-  print(paste("Topics found: ", train.topics[i]))
+  print(paste("Topic(s) found: ", train.topics[i]))
   print (train$`Consumer complaint narrative`[ui[i]])
 }
 ```
@@ -338,12 +343,11 @@ getBestTopicNums <- function(arr, threshold) {
 ## Form a matrix of topic probability vectors for each issue
 
 ```{r}
-most_freq_issues_num <- 30
-issueTopicsProbMat <- matrix(NA,nrow = most_freq_issues_num, ncol = numTopics)
+issueTopicsProbMat <- matrix(NA,nrow = issuesToPredict, ncol = numTopics)
 
 # for each issue
-for (i in 1:most_freq_issues_num) {
-  issueName <- most_freq_issues_list[i]
+for (i in 1:issuesToPredict) {
+  issueName <- full_sorted_issues_list[i]
   print(issueName)
 
   # matrix of issue topics probabilities
@@ -351,9 +355,6 @@ for (i in 1:most_freq_issues_num) {
   uiIds <- match(issueids$id, ui)
   topicsProbabMatr <- train.lda@gamma[uiIds,] 
   meanVec <- colMeans(topicsProbabMatr, na.rm = T)
-  #tops <- getBestTopicNums(meanVec, .05)
-  #print(train.terms[,tops])
-  #print (meanVec)
   issueTopicsProbMat[i,] <- meanVec
 }
 ```
@@ -378,18 +379,19 @@ numOfTests <- 10000
 numOfComplaintsToPrint <- 5
 testThreshold =0.1
 
-set.seed(12)
+# prepare test data
+set.seed(123)
 randomIds <- sample(nrow(test),numOfTests)
-
 test.corpus <- prepareCorpus(test$`Consumer complaint narrative`[randomIds])
 test.corpus <- doSteming(test.corpus)
+
 test.dtm <- DocumentTermMatrix(test.corpus, control = list(minWordLength = 1))
 
 #remove all docs with low number of words and correct supporting info
-rowTotals <- apply(test.dtm , 1, sum) #num words in each Document
+rowTotals  <- apply(test.dtm , 1, sum) #num words in each Document
 test.dtm   <- test.dtm[rowTotals > 10,] 
 numOfTests <- test.dtm$nrow
-randomIds  <-randomIds[rowTotals > 10]
+randomIds  <- randomIds[rowTotals > 10]
 
 #get topics
 test.topics <- posterior(train.lda,test.dtm)
@@ -402,7 +404,7 @@ for (i in 1:numOfTests) {
 
   # orig issue id
   origIssueTxt <- test[[randomIds[i],"Issue"]][1]
-  origIssueId <- match(origIssueTxt, most_freq_issues_list)
+  origIssueId <- match(origIssueTxt, full_sorted_issues_list)
   origCls[i] <-  origIssueId 
   
   # inferred issue id
@@ -415,9 +417,9 @@ for (i in 1:numOfTests) {
   if (i <= numOfComplaintsToPrint) {
     print("----------")
     print (paste("Original Issue  : ", origIssueTxt))
-    print (paste("Inferred Issue 1: ", most_freq_issues_list[issuesFound$ix[1]]))
-    print (paste("Inferred Issue 2: ", most_freq_issues_list[issuesFound$ix[2]]))
-    print (paste("Inferred Issue 3: ", most_freq_issues_list[issuesFound$ix[3]]))
+    print (paste("Inferred Issue 1: ", full_sorted_issues_list[issuesFound$ix[1]]))
+    print (paste("Inferred Issue 2: ", full_sorted_issues_list[issuesFound$ix[2]]))
+    print (paste("Inferred Issue 3: ", full_sorted_issues_list[issuesFound$ix[3]]))
     print(paste("Complaint narrative:",test[[randomIds[i],"Consumer complaint narrative"]]))
   }
 }
@@ -426,85 +428,6 @@ for (i in 1:numOfTests) {
 ## Issue prediction accuracy
 
 ```{r}
-(tbl <- table(origCls, infrCls))
+(tbl <- table(origCls,infrCls))
 (sum(diag(tbl)))/numOfTests
-```
-
- 
- \newpage
- 
-## Grouping issues
-```{r}
-distMatrix <- dist(scale(issueTopicsProbMat), method = "euclidean")
-fit <- hclust(distMatrix, method = "ward.D2")
-numClusters <- 4
-
-plot(fit)
-clusters <- rect.hclust(fit, k = numClusters)
-```
-
-```{r}
-for (i in 1:length(clusters)) {
-    print("----------")
-    print(paste("Cluster ", i))
-    for (issueNum in clusters[[i]]) {
-      print (paste("   Issue: ", most_freq_issues_list[issueNum]))
-    }
-}
-```
-
-
-\newpage
-
-## Identify a cluster group of random 'test' complaints
-
-```{r message=FALSE, warning=FALSE, linewidth = 90}
-
-whichClusters <- function(clusters, topList) {
-  ret <- c()
-  ln <- length(topList)
-  for (i in 1:length(clusters)) {
-    v <- Reduce(intersect, list(clusters[[i]], topList))
-    n <- length(v)
-    if (n > 0) {
-      ret <- append(ret, i)
-      if (n == ln) {
-        break; # nothing to do anymore
-      }
-    }
-  }
-  return (ret)
-}
-
-numOfTests <- 5000
-
-set.seed(123)
-randomIds <- sample(nrow(test),numOfTests)
-
-test.corpus <- prepareCorpus(test$`Consumer complaint narrative`[randomIds])
-test.corpus <- doSteming(test.corpus)
-test.dtm <- DocumentTermMatrix(test.corpus, control = list(minWordLength = 1))
-test.topics <- posterior(train.lda,test.dtm)
-
-origCls <- replicate(numOfTests, NA)
-infrCls <- replicate(numOfTests, NA)
-for (i in 1:numOfTests) {
-  issuesFound <- distInfo (test.topics$topics[i,],issueTopicsProbMat)
-  tops <- getBestTopicNums(test.topics$topics[i,], testThreshold)
-  clusterIds <- whichClusters(clusters, tops)
-  origIssue <- as.String(test[[randomIds[i],"Issue"]])
-  orgIssueId <- c(match(origIssue, most_freq_issues_list))
-  narrative <- test[[randomIds[i],"Consumer complaint narrative"]]
-  
-  v <- whichClusters(clusters, orgIssueId)[1]
-  if (!is.null(v))
-    origCls[i] <-  v
-  infrCls[i] <- whichClusters(clusters, tops)[1]
-}
-
-
-# accuracy
-(tbl <- table(origCls, infrCls))
-(sum(diag(tbl)))/numOfTests
-
 ```
