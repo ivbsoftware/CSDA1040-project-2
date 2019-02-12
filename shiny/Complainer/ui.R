@@ -6,9 +6,16 @@ library(shiny)
 library(shinythemes)
 library(shinyjs)
 
+## UI extensions
+jscode <- "
+shinyjs.refocus = function(e_id) {
+document.getElementById(e_id).focus();
+}"
+
 shinyUI(fluidPage(
   theme=shinytheme("readable"),
   shinyjs::useShinyjs(),
+  extendShinyjs(text = jscode, functions = "refocus"),
   tags$style(HTML(" .shiny-input-container:not(.shiny-input-container-inline) { width: 100%; height: 100%; }")),
   
   # Application title
@@ -18,11 +25,15 @@ shinyUI(fluidPage(
   sidebarLayout(
     position = "left",
     sidebarPanel(
-      actionButton("updateRandom", "Load Random Complaint",width = "100%"),  
+      actionButton("analyze", "Analyze It!", width = "100%"),
       p(),              
-      actionButton("analyze", "Analyze It!",width = "100%"),
-      p(),
-      verbatimTextOutput("msg")
+      actionButton("updateRandom", "Random Complaint",width = "100%"),  
+      p(),              
+      actionButton("reset", "Reset All", width = "100%"),  
+      p(),              
+      actionButton("help", "Help", width = "100%")
+      #      hr(),              
+#      verbatimTextOutput("msg")
     ),
     
     # Show a plot of the generated distribution
@@ -32,7 +43,6 @@ shinyUI(fluidPage(
         textAreaInput(
           inputId="complaintIn", 
           label="Complain here:", 
-          #value="Please write your complaint or load a random one an edit it",
           resize = "none", rows = 20
         )
       )
