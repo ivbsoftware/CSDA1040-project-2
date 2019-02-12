@@ -21,7 +21,8 @@ library(tm)
 library(stopwords)
 library(caTools)
 library(tidytext)
-library(Rfast)
+#library(Rfast)
+library(philentropy)
 
 set.seed(777)
 ```
@@ -370,9 +371,9 @@ saveRDS(issueTopicsProbMat, file = "./user-complaints-mining/issueTopicsProbMat.
 distInfo <- function(vec, mat) {
   retVec <- vector(length = nrow(mat))
   for (i in 1:nrow(mat)) {
-    retVec[i] <- dist(rbind(vec,mat[i,]))
+    retVec[i] <- JSD(rbind(vec,mat[i,]), est.prob = "empirical")
   }
-  retVec <- sort(retVec, index.return=TRUE)
+  retVec <- sort(retVec, index.return = TRUE)
   return (retVec)
 }
 # prepare test data

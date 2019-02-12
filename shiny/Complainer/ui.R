@@ -29,11 +29,9 @@ shinyUI(fluidPage(
       p(),              
       actionButton("updateRandom", "Random Complaint",width = "100%"),  
       p(),              
-      actionButton("reset", "Reset All", width = "100%"),  
-      p(),              
-      actionButton("help", "Help", width = "100%")
-      #      hr(),              
-#      verbatimTextOutput("msg")
+      actionButton("reset", "Reset", width = "100%")  
+      #p(),              
+      #actionButton("help", "Help", width = "100%")
     ),
     
     # Show a plot of the generated distribution

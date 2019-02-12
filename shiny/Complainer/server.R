@@ -2,17 +2,19 @@ library(shiny)
 library(shinyjs)
 
 library(ggplot2)
-library(readr)
-library(RDSTK)
-library(Matrix)
-library(dplyr)
+#library(readr)
+#library(RDSTK)
+#library(Matrix)
+#library(dplyr)
 library(forcats)
 library(tm)
 library(stopwords)
 library(caTools)
-library(tidytext)
-library(Rfast)
+#library(tidytext)
+#library(Rfast)
+library(philentropy)
 
+set.seed(123)
 
 ## Reading in Data 
 numTopics <- 12 # 7, 10 or 30
@@ -20,12 +22,13 @@ topicsFileName <- paste("./lda",numTopics,".Rds", sep = "")
 train.lda <- readRDS(topicsFileName)
 train.terms <- terms(train.lda, 10) # first 10 terms of every topic
 
-full_sorted_issues_list <- readRDS("full_sorted_issues_list.Rds") 
+full_sorted_issues_list <- unlist (readRDS("full_sorted_issues_list.Rds"))
 sampleComplaints <- readRDS("sampleComplaints.Rds") 
 sampleComplaintsNum <- nrow(sampleComplaints)
 
 issueTopicsProbMat <- readRDS("issueTopicsProbMat.Rds")
-testThreshold =0.1
+
+maxDistThreshold = 0.004
 
 ## corpus prep function
 prepareCorpus <- function(textArr) {
@@ -42,25 +45,47 @@ prepareCorpus <- function(textArr) {
   return (myCorpus)
 }
 
-## get best topics function
-getBestTopicNums <- function(arr, threshold) {
-  topNums <- sort(arr, index.return=TRUE, decreasing = TRUE)$ix
-  arr <- arr[arr>threshold]
-  return (topNums[1:length(arr)])
-}
-
+## calc sorted distances from vector 'vec'
+## to each row in matrix 'mat'
 distInfo <- function(vec, mat) {
   retVec <- vector(length = nrow(mat))
   for (i in 1:nrow(mat)) {
-    retVec[i] <- dist(rbind(vec,mat[i,]))
+    retVec[i] <- JSD(rbind(vec,mat[i,]), est.prob = "empirical")
   }
   retVec <- sort(retVec, index.return=TRUE)
   return (retVec)
 }
 
+## Vector arr is a vector of probabilities for the topics to fit
+## the corpus, sum of arr values is 1.
+## Best topics are those with probability > (1/numOfTopics + testThreshold)
+testThreshold =0.001
+getBestTopicNums <- function(arr, threshold) {
+  topNums <- sort(arr, index.return=TRUE, decreasing = TRUE)$ix
+  cutThrshold <- testThreshold + 1/length(arr)
+  print("------------")
+  print(cutThrshold)
+  print(arr)
+  arr <- arr[arr > cutThrshold]
+  print(arr)
+  print("------------")
+  len <- length(arr)
+  if (len > 0) {
+    return (topNums[1:len])
+  }
+  else {
+    return (NULL)
+  }
+}
+
 ## server logic
 shinyServer(function(input, output, session) {
 
+  observeEvent(input$reset, {
+    updateTextInput(session, "complaintIn", value="")
+    js$refocus("complaintIn") 
+  })
+  
   # callback - 'updateRandom' button clicked 
   observeEvent(input$updateRandom, {
     id <- sample.int(sampleComplaintsNum,1)
@@ -69,16 +94,12 @@ shinyServer(function(input, output, session) {
     js$refocus("analyze") #set focus to 'Analyze It" 
   })
 
-  dataModal <- function(failed = FALSE) {
+  dataModal <- function(issuesFoundTextArr) {
     modalDialog(
-      textInput("dataset", "Choose data set",
-                placeholder = 'Try "mtcars" or "abc"'
-      ),
+      verbatimTextOutput(issuesFoundTextArr),
       span('(Try the name of a valid data object like "mtcars", ',
            'then a name of a non-existent object like "abc")'),
-      if (failed)
-        div(tags$b("Invalid name of data object", style = "color: red;")),
-      
+
       footer = tagList(
         modalButton("Cancel"),
         actionButton("ok", "OK")
@@ -91,28 +112,61 @@ shinyServer(function(input, output, session) {
     text <- input$complaintIn
     corpus <- prepareCorpus(text)
     dtm <- DocumentTermMatrix(corpus, control = list(minWordLength = 1))
-    topics <- posterior(train.lda,dtm)
-    issuesFound <- distInfo (topics$topics[1,],issueTopicsProbMat)
-    tops <- getBestTopicNums(topics$topics[1,], testThreshold)
-    print (tops)
-    print (issuesFound)
-    showModal(dataModal())
-  })
-
-  # When OK button is pressed, attempt to load the data set. If successful,
-  # remove the modal. If not show another modal, but this time with a failure
-  # message.
-  observeEvent(input$ok, {
-    # Check that data object exists and is data frame.
-    if (!is.null(input$dataset) && nzchar(input$dataset) &&
-        exists(input$dataset) && is.data.frame(get(input$dataset))) {
-      vals$data <- get(input$dataset)
-      removeModal()
-    } else {
-      showModal(dataModal(failed = TRUE))
+    topicsFoundNum <- 0
+    issuesFoundNum <- 0
+    if (wordcount(text) > 1) {
+      topics <- posterior(train.lda,dtm)
+      print(topics$topics[1,])
+  
+      print ("5 terms from betsTopics: ")
+      bestTopics <- getBestTopicNums(topics$topics[1,])
+      print(bestTopics)
+      print(train.terms[1:10,bestTopics])
+      
+      # no topics, no issues...
+      topicsFoundNum <- length(bestTopics)
+      issuesFoundNum <- 0
+      if (topicsFoundNum > 0) {
+        issuesFound <- distInfo(topics$topics[1,],issueTopicsProbMat)
+        print (paste("issuesFound: ",issuesFound))
+        
+        list.condition <- sapply(issuesFound$x, function(v) v <= maxDistThreshold)
+        probableIssues  <- issuesFound$ix[list.condition]
+        maxLen <- 3
+        if (length(probableIssues) > maxLen) {
+          probableIssues <- probableIssues[1:maxLen]
+        }
+        print ("probableIssues: ")
+        print (probableIssues)
+        issuesFoundNum <- length(probableIssues)
+      }
     }
+    # response 
+    if (topicsFoundNum > 0 & issuesFoundNum > 0) {
+      issuesFoundText <- full_sorted_issues_list[probableIssues]
+      #print (paste("issuesFoundText: ", issuesFoundText))
+      
+      message <- "It seems that you are having the following issues with one of the financial institutions:<ul>"
+      for (issue in issuesFoundText) {
+        message <- paste0(message, "<li>", issue, "</li>")
+      }
+      message <- paste0(message, "</ul>")
+      message <- paste0(message, 
+        "<br>We will pass your complaint to our service department and let you know.")
+      
+    } else {
+      message <- "We don't know what your problem is... Try to complain somewhere else."      
+    }
+
+    showModal(modalDialog(
+      HTML(message),
+      title = "We reviewed your complaint...",
+      easyClose = TRUE,
+      footer = modalButton("Close")
+    ))    
   })
 
-  js$refocus("complaintIn") #set focus to 'Complain Here" 
+  # Set focus to 'Complain Here" field
+  js$refocus("complaintIn") 
 
 })
