@@ -87,6 +87,8 @@ df
 
 ```{r fig.height=7, fig.width=5.5, message=FALSE, warning=FALSE}
 full_sorted_issues_list <- levels(fct_infreq(df$Issue))
+saveRDS(full_sorted_issues_list, file = "./user-complaints-mining/full_sorted_issues_list.Rds")
+
 ggplot() + aes(fct_infreq(df[df$Issue %in% full_sorted_issues_list[1:30],]$Issue))+ 
   geom_histogram(colour="black", fill="white", stat = "count")+
   ylab("Issue Complaints Frequency") + xlab("")+
@@ -424,4 +426,20 @@ for (i in 1:numOfTests) {
 ```{r}
 (tbl <- table(origCls,infrCls))
 (sum(diag(tbl)))/numOfTests
+```
+\newpage
+# Prepare data for use in Shiny App
+
+## Save random test complaints from the set of 'issuesToPredict'
+```{r}
+complaintsToSave <- 2000 # will be about half of that after cleaning
+set.seed(1234)
+randomIds <- sample(nrow(test),complaintsToSave)
+sampleComplaints <- test[randomIds, c("issueId","Issue","Consumer complaint narrative")]
+sampleComplaints$wordcount <- sapply(sampleComplaints$"Consumer complaint narrative", wordcount)
+stats <- summary(sampleComplaints$wordcount)
+sampleComplaints <- sampleComplaints[
+  (sampleComplaints$wordcount >= stats[["1st Qu."]] & 
+     sampleComplaints$wordcount <= stats[["3rd Qu."]]),]
+saveRDS(df, file = "./user-complaints-mining/sampleComplaints.Rds")
 ```

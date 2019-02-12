@@ -4,3 +4,5 @@ data/Consumer_Complaints.csv.zip
 playground/user-complaints-mining - Copy.Rmd
 playground/user-complaints-mining/todelete/
 playground/user-complaints-mining/lda3.Rds
+playground/user-complaints-mining-CTM-small.Rmd
+playground/user-complaints-mining-CTM.Rmd
