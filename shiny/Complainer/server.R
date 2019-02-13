@@ -7,6 +7,9 @@ library(stopwords)
 library(caTools)
 library(philentropy)
 library(ngram)
+library(topicmodels)
+library(SnowballC)
+library(wordcloud)
 
 #set.seed(123)
 

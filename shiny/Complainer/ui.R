@@ -17,6 +17,7 @@ shinyUI(fluidPage(
   shinyjs::useShinyjs(),
   extendShinyjs(text = jscode, functions = "refocus"),
   tags$style(HTML(" .shiny-input-container:not(.shiny-input-container-inline) { width: 100%; height: 100%; }")),
+  tags$head(tags$style(type="text/css", ".container-fluid {  max-width: 1000px;}")),
   
   # Application title
   titlePanel("Customer Complaints Analyzer"),
