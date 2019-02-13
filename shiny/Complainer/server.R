@@ -111,7 +111,7 @@ shinyServer(function(input, output, session) {
     dtm <- DocumentTermMatrix(corpus, control = list(minWordLength = 1))
     topicsFoundNum <- 0
     issuesFoundNum <- 0
-    if (wordcount(text) > 1) {
+    if (wordcount(text) > 10) {
       topics <- posterior(train.lda,dtm)
       print(topics$topics[1,])
   
