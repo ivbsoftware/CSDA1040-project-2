@@ -1,0 +1,462 @@
+---
+title: "User Complaints Mining"
+author: "Igor Baranov, Michael Parravani, Ariana Biagi, Hui Fang Cai"
+date: "February 12, 2019"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library("ggplot2")
+library("readr")
+library("RDSTK")
+library("Matrix")
+library("dplyr")
+library("forcats")
+library(tm)
+library(stopwords)
+library(caTools)
+library(tidytext)
+#library(Rfast)
+library(philentropy)
+
+set.seed(777)
+```
+
+```{r wrap-hook, include=FALSE}
+# Wrapping long text hook - https://github.com/yihui/knitr-examples/blob/master/077-wrap-output.Rmd
+# See usage of print statement with linewidth atrribute in the chunk header.
+library(knitr)
+hook_output = knit_hooks$get('output')
+knit_hooks$set(output = function(x, options) {
+  # this hook is used only when the linewidth option is not NULL
+  if (!is.null(n <- options$linewidth)) {
+    x = knitr:::split_lines(x)
+    # any lines wider than n should be wrapped
+    if (any(nchar(x) > n)) x = strwrap(x, width = n)
+    x = paste(x, collapse = '\n')
+  }
+  hook_output(x, options)
+})
+```
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+# Seting directory to current script (works in R Studio only)
+#this.dir <- dirname(rstudioapi::getActiveDocumentContext()$path)
+#setwd(this.dir)
+```
+
+# Introduction 
+
+Customer complaints give businesse valuable information about how they need to improve. This project uses Text Mining techniques to  extract useful, interesting and hidden information from consumers'narrative complaints from Consumer Financial Protection Bureau. This might be used to help financial institutions improve the quality of their services and enchance their competitive capacity in the market.
+The data used in this project can be downloaded from Kaggle's [Consumer Complaints Database -Financial Services complaints ](https://www.kaggle.com/sebastienverpile/consumercomplaintsdata/downloads/Consumer_Complaints.csv).
+(81,940 rows x 18 columns) In this project,all of no complaints (missing values) and unnecssary columns are removed for the analysis. 
+
+# Preparing data
+## Load and clean the customer complaints data
+
+The data should be downloaded from Kaggle's [Consumer Complaints Database](https://www.kaggle.com/sebastienverpile/consumercomplaintsdata/downloads/Consumer_Complaints.csv/1).
+
+Loading and removing rows with no complaint narrative and unnecessary colimns:
+
+```{r message=FALSE, warning=FALSE}
+if(!file.exists("./user-complaints-mining/df.Rds")) {
+  df <- read_csv(file="../data/Consumer_Complaints.csv.zip",col_names = TRUE)
+  df <- df[,-c(1,7,9:18)]
+  df <- df[!is.na(df[,"Consumer complaint narrative"]),] #199,970
+  df <- df[!is.na(df[,"Company"]),] # no NA's
+  df <- df[!is.na(df[,"Product"]),] # no NA's
+  df <- df[!is.na(df[,"Issue"]),] # no NA's
+  df <- df[!is.na(df[,"Sub-product"]),] # 147,788 total left
+  df <- df[!is.na(df[,"Sub-issue"]),]   # 81,940 total left
+  
+  # Converting all but narrative columns to factors
+  df$Product <- as.factor(df$Product)
+  df$`Sub-product` <- as.factor(df$`Sub-product`)
+  df$Issue <- as.factor(df$Issue)
+  df$`Sub-issue` <- as.factor(df$`Sub-issue`)
+  df$Company <- as.factor(df$Company)
+  saveRDS(df, file = "./user-complaints-mining/df.Rds")
+  gc()
+} else {
+  df <- readRDS("./user-complaints-mining/df.Rds")
+}
+df
+```
+
+# Feature engineering
+
+## Distribution of the most frequent "Issue" complaints
+
+```{r fig.height=7, fig.width=5.5, message=FALSE, warning=FALSE}
+full_sorted_issues_list <- levels(fct_infreq(df$Issue))
+saveRDS(full_sorted_issues_list, file = "./user-complaints-mining/full_sorted_issues_list.Rds")
+
+ggplot() + aes(fct_infreq(df[df$Issue %in% full_sorted_issues_list[1:30],]$Issue))+ 
+  geom_histogram(colour="black", fill="white", stat = "count")+
+  ylab("Issue Complaints Frequency") + xlab("")+
+  theme(axis.text.x = element_text(angle =90, hjust = 1))
+```
+
+There is substantial drop off of use of different complaint codes
+
+\newpage
+
+```{r fig.height=7.5, fig.width=5.5, message=FALSE, warning=FALSE}
+most_freq_subissues_list <- levels(fct_infreq(df$`Sub-issue`))[1:30]
+ggplot() + aes(fct_infreq(df[df$`Sub-issue` %in% most_freq_subissues_list,]$`Sub-issue`))+ 
+  geom_histogram(colour="black", fill="white", stat = "count")+
+  ylab("Sub-Issue Complaints Frequency") + xlab("")+
+  theme(axis.text.x = element_text(angle =90, hjust = 1))
+```
+
+\newpage
+## Distribution of the most frequent "Product" complaints
+
+```{r fig.height=7.5, fig.width=5.5, message=FALSE, warning=FALSE}
+most_freq_product_list <- levels(fct_infreq(df$Product))[1:30]
+ggplot() + aes(fct_infreq(df[df$Product %in% most_freq_product_list,]$Product))+ 
+  geom_histogram(colour="black", fill="white", stat = "count")+
+  ylab("Product Compliants Frequency") + xlab("")+
+  theme(axis.text.x = element_text(angle =90, hjust = 1))
+```
+
+\newpage
+## Distribution of the most frequent "Sub-product" complaints
+
+```{r fig.height=7.5, fig.width=5.5, message=FALSE, warning=FALSE}
+most_freq_subproduct_list <- levels(fct_infreq(df$`Sub-product`))
+ggplot() + aes(fct_infreq(df[df$`Sub-product` %in% most_freq_subproduct_list,]$`Sub-product`))+ 
+  geom_histogram(colour="black", fill="white", stat = "count")+
+  ylab("Sub-Product Complaints Frequency") + xlab("")+
+  theme(axis.text.x = element_text(angle =90, hjust = 1))
+```
+
+\newpage
+## Distribution of the most frequent "Company" complaints
+
+```{r fig.height=7.5, fig.width=5.5, message=FALSE, warning=FALSE}
+most_freq_company_list <- levels(fct_infreq(df$Company))[1:30]
+ggplot() + aes(fct_infreq(df[df$Company %in% most_freq_company_list,]$Company))+ 
+  geom_histogram(colour="black", fill="white", stat = "count")+
+  ylab("Company Complaints Frequency") + xlab("")+
+  theme(axis.text.x = element_text(angle =90, hjust = 1))
+```
+
+\newpage
+
+# Text Minig
+
+## Split data into test and train sets for Issue prediction
+
+```{r}
+issuesToPredict <- 12
+
+df$issueId <- match(df$Issue, full_sorted_issues_list)
+df_issues <- df[df$issueId <= issuesToPredict,]
+
+set.seed(123)
+sample = sample.split(df_issues$`Consumer complaint narrative`, SplitRatio = .5)
+train_full = subset(df_issues, sample == TRUE)
+train_full$oid <- c(1:nrow(train_full))
+test  = subset(df_issues, sample == FALSE)
+```
+
+## Distribution of the text word count
+
+```{r message=FALSE, warning=FALSE}
+library(ngram)
+
+train_full$wordcount <- sapply(train_full$"Consumer complaint narrative", wordcount)
+stats <- summary(train_full$wordcount)
+
+ggplot() + aes(train_full$wordcount)+ geom_histogram(binwidth=10, colour="black", fill="white")+
+  geom_vline(xintercept=stats[["Mean"]], color="green")+
+  geom_vline(xintercept=c(stats[["1st Qu."]],stats[["3rd Qu."]]), color="red")+
+  scale_x_continuous(limits = c(0, 500))
+```
+
+```{r}
+train <- train_full[(train_full$wordcount >= stats[["1st Qu."]] & train_full$wordcount <= stats[["3rd Qu."]]),]
+train <- sample_n(train, 15000)
+train$id <- c(1:nrow(train))
+```
+
+\newpage
+
+## Word analysis 
+
+Building a corpus, which is a collection of text documents VectorSource specifies that the source is character vectors.After that, the corpus needs a couple of transformations, 
+including changing letters to lower case, removing punctuations/numbers 
+and removing stop words. The general English stop-word list is tailored by adding some words specific to the documents in question.
+
+
+```{r message=FALSE, warning=FALSE, linewidth = 90}
+if(!file.exists("./user-complaints-mining/myCorpus.Rds")) {
+  myCorpus <- Corpus(VectorSource(train$`Consumer complaint narrative`))
+  myCorpus <- tm_map(myCorpus, removePunctuation)
+  myCorpus <- tm_map(myCorpus, removeNumbers)
+  myCorpus <- tm_map(myCorpus, tolower)
+  myStopwords <- c(stopwords(language="en", source="smart"), 
+                  "xx", "xxxx", "xxxxxxxxxxxx", "xxxxxxxx",
+                  "told", "well", "month", "year"
+                   )
+  myCorpus <- tm_map(myCorpus, removeWords, myStopwords)
+  myCorpus <- tm_map(myCorpus, stripWhitespace)
+  saveRDS(myCorpus, file = "./user-complaints-mining/myCorpus.Rds")
+  gc()
+} else {
+  myCorpus <- readRDS("./user-complaints-mining/myCorpus.Rds")
+}
+print(myCorpus[1:5]$content)
+```
+
+
+### Steming
+```{r message=FALSE, warning=FALSE, linewidth = 90}
+dictCorpus <- myCorpus
+myCorpus <- tm_map(myCorpus, stemDocument)
+print(myCorpus[1:5]$content)
+```
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE, linewidth=90}
+### Stem completion - failed on out of memory, skipping for now
+myCorpus <- tm_map(myCorpus, stemCompletion, dictionary=dictCorpus)
+print(myCorpus[1:5]$content)
+```
+\newpage
+# Building a Document-Term Matrix
+
+This operation is resource and time consuming. To avoid calculation, the pre-build myDtm object will be loaded from the file system. To recalculate it needs to be removed from the file system first.
+
+```{r message=FALSE, warning=FALSE}
+if(!file.exists("./user-complaints-mining/myDtm.Rds")) {
+  myDtm <- TermDocumentMatrix(myCorpus, control = list(minWordLength = 1))
+  rowTotals <- apply(myDtm , 1, sum) #Find the sum of words in each Document
+  myDtm <- myDtm[rowTotals > 0, ] #remove all docs without words
+  #myDtm <- removeSparseTerms(myDtm, sparse = 0.99)
+  saveRDS(myDtm, file = "./user-complaints-mining/myDtm.Rds")
+  gc()
+} else {
+  myDtm <- readRDS("./user-complaints-mining/myDtm.Rds")
+}
+inspect(myDtm)
+```
+
+\newpage
+## Frequent Terms and Association
+```{r}
+freq.terms <- findFreqTerms(myDtm, lowfreq=5)
+term.freq <- rowSums(as.matrix(myDtm))
+term.freq <- subset(term.freq, term.freq >= 5)
+```
+
+```{r figMFT, fig.height=5, fig.width=5.5, message=FALSE, warning=FALSE, fig.cap="30 Most Frequent Terms"}
+dfTerms <- data.frame(term = names(term.freq), freq = term.freq)
+ggplot(dfTerms[order(-dfTerms$freq),][1:30,], aes(x = reorder(term, freq), y = freq)) + 
+  geom_bar(stat = "identity") + xlab("Terms") + ylab("") + coord_flip()
+```
+
+## Which words are associated with term "loan"?
+```{r}
+findAssocs(myDtm, c('loan'), 0.3)
+```
+\newpage 
+
+Building word cloud:
+
+```{r figCl1, fig.height=5.5, fig.width=5.5, message=FALSE, warning=FALSE, paged.print=FALSE, fig.cap="Words Cloud of Complaints"}
+library(wordcloud)
+m <- as.matrix(myDtm)
+v <- sort(rowSums(m), decreasing=TRUE)
+myNames <- names(v)
+d <- data.frame(word=myNames, freq=v)
+wordcloud(d$word, d$freq, min.freq=20, scale=c(4,.2), max.words = 200)
+```
+
+\newpage
+
+## Building LDA model for the 'train' set of complaints
+
+```{r message=FALSE, warning=FALSE}
+library(topicmodels)
+dtm <- as.DocumentTermMatrix(myDtm)
+numTopics <- 12 # 7, 10 or 30
+topicsFileName <- paste("./user-complaints-mining/lda",numTopics,".Rds", sep = "") 
+ui = unique(dtm$i) #array of unique row ids in 'train' set
+if(!file.exists(topicsFileName)) {
+  dtm.new = dtm[ui,]
+  train.lda <- LDA(dtm.new, k = numTopics) # identify topics
+  saveRDS(train.lda, file = topicsFileName)
+  gc()
+} else {
+  train.lda <- readRDS(topicsFileName)
+}  
+(train.terms <- terms(train.lda, 10)) # first terms of every topic
+```
+
+\newpage
+## Show complaints correlation to topics in 'train' set
+
+```{r message=FALSE, warning=FALSE, linewidth = 90}
+train.topics <- topics(train.lda, 5, threshold=.005)
+for (i in c(1,55,500,333)) {
+  print (paste(" "))
+  print (paste("Complaint# ", i))
+  print(paste("Topic(s) found: ", train.topics[i]))
+  print (train$`Consumer complaint narrative`[ui[i]])
+}
+```
+
+
+\newpage
+
+# Topics related to most frequent issues
+
+## Function definitions
+```{r}
+prepareCorpus <- function(textArr) {
+  myCorpus <- Corpus(VectorSource(textArr))
+  myCorpus <- tm_map(myCorpus, removePunctuation)
+  myCorpus <- tm_map(myCorpus, removeNumbers)
+  myCorpus <- tm_map(myCorpus, tolower)
+  myStopwords <- c(stopwords(language="en", source="smart"), 
+                  "xx", "xxxx", "xxxxxxxxxxxx", "xxxxxxxx")
+  myCorpus <- tm_map(myCorpus, removeWords, myStopwords)
+  myCorpus <- tm_map(myCorpus, stripWhitespace)
+  
+  return (myCorpus)
+}
+
+# Steming and reverse - long operation!
+doSteming <- function(myCorpus) {
+  #dictCorpus <- myCorpus
+  myCorpus <- tm_map(myCorpus, stemDocument)
+  #myCorpus <- tm_map(myCorpus, stemCompletion, dictionary=dictCorpus)
+  return (myCorpus)
+}
+
+getBestTopicNums <- function(arr, threshold) {
+  topNums <- sort(arr, index.return=TRUE, decreasing = TRUE)$ix
+  arr <- arr[arr>threshold]
+  return (topNums[1:length(arr)])
+}
+
+```
+
+\newpage
+
+## Form a matrix of topic probability vectors for each issue
+
+```{r}
+issueTopicsProbMat <- matrix(NA,nrow = issuesToPredict, ncol = numTopics)
+
+# for each issue
+for (i in 1:issuesToPredict) {
+  issueName <- full_sorted_issues_list[i]
+  print(issueName)
+
+  # matrix of issue topics probabilities
+  issueids <- subset(train[,c("id")], train$Issue == issueName)
+  uiIds <- match(issueids$id, ui)
+  topicsProbabMatr <- train.lda@gamma[uiIds,] 
+  meanVec <- colMeans(topicsProbabMatr, na.rm = T)
+  issueTopicsProbMat[i,] <- meanVec
+}
+saveRDS(issueTopicsProbMat, file = "./user-complaints-mining/issueTopicsProbMat.Rds")
+```
+
+
+\newpage
+## Identify issues of random 'test' complaints
+
+```{r message=FALSE, warning=FALSE, linewidth = 90}
+distInfo <- function(vec, mat) {
+  retVec <- vector(length = nrow(mat))
+  for (i in 1:nrow(mat)) {
+    retVec[i] <- JSD(rbind(vec,mat[i,]), est.prob = "empirical")
+  }
+  retVec <- sort(retVec, index.return = TRUE)
+  return (retVec)
+}
+# prepare test data
+numOfTests <- 1000
+numOfComplaintsToPrint <- 5
+testThreshold =0.1
+set.seed(123)
+randomIds <- sample(nrow(test),numOfTests)
+test.corpus <- prepareCorpus(test$`Consumer complaint narrative`[randomIds])
+test.corpus <- doSteming(test.corpus)
+test.dtm <- DocumentTermMatrix(test.corpus, control = list(minWordLength = 1))
+
+#remove all docs with low number of words and correct supporting info
+rowTotals  <- apply(test.dtm , 1, sum) #num words in each Document
+test.dtm   <- test.dtm[rowTotals > 10,] 
+numOfTests <- test.dtm$nrow
+randomIds  <- randomIds[rowTotals > 10]
+test.topics <- posterior(train.lda,test.dtm)
+
+origCls <- replicate(numOfTests, NA)
+infrCls <- replicate(numOfTests, NA)
+for (i in 1:numOfTests) {
+  issuesFound <- distInfo (test.topics$topics[i,],issueTopicsProbMat)
+  tops <- getBestTopicNums(test.topics$topics[i,], testThreshold)
+
+  # orig issue id
+  origIssueTxt <- test[[randomIds[i],"Issue"]][1]
+  origIssueId <- match(origIssueTxt, full_sorted_issues_list)
+  origCls[i] <-  origIssueId 
+  
+  # inferred issue id
+  if (origIssueId %in% issuesFound$ix[1:3]) {
+    infrCls[i] <- origIssueId
+  } else {
+    infrCls[i] <- issuesFound$ix[1]
+  }
+  if (i <= numOfComplaintsToPrint) {
+    print("----------")
+    print (paste("Original Issue  : ", origIssueTxt))
+    print (paste("Inferred Issue 1: ", full_sorted_issues_list[issuesFound$ix[1]]))
+    print (paste("Inferred Issue 2: ", full_sorted_issues_list[issuesFound$ix[2]]))
+    print (paste("Inferred Issue 3: ", full_sorted_issues_list[issuesFound$ix[3]]))
+    print(paste("Complaint narrative:",test[[randomIds[i],"Consumer complaint narrative"]]))
+  }
+}
+```
+
+\newpage
+
+## Issue prediction accuracy
+
+```{r}
+(tbl <- table(origCls,infrCls))
+(sum(diag(tbl)))/numOfTests
+```
+\newpage
+# Prepare data for use in Shiny App
+
+## Save random test complaints from the set of 'issuesToPredict'
+```{r}
+complaintsToSave <- 2000 # will be about half of that after cleaning
+set.seed(1234)
+randomIds <- sample(nrow(test),complaintsToSave)
+sampleComplaints <- test[randomIds, c("issueId","Issue","Consumer complaint narrative")]
+sampleComplaints$wordcount <- sapply(sampleComplaints$"Consumer complaint narrative", wordcount)
+stats <- summary(sampleComplaints$wordcount)
+sampleComplaints <- sampleComplaints[
+  (sampleComplaints$wordcount >= stats[["1st Qu."]] & 
+     sampleComplaints$wordcount <= stats[["3rd Qu."]]),]
+saveRDS(df, file = "./user-complaints-mining/sampleComplaints.Rds")
+```
+
+## Deployment
+The long term deployment of this will be to channel complaints to appropriate product teams basied on the context of the complaint. Deploying it as an app such as this for a user to submit their complaint into will be sufficient.
+
+New data can be collected with each complaint call. If the service desk clerk does not forward it off to someone else, then the label was appropriate. The model can be monitored with the number of "forwards" that come through the service desk clerks. If this number gets too high (10%?) then a model can be re-trained. 
+
+## Link to Shiny App
+The application is deployed at [ivbsoftware.shinyapps.io/Complainer](https://ivbsoftware.shinyapps.io/Complainer/). The code of the application is located on [Github](https://github.com/ivbsoftware/CSDA1040-project-2/tree/master/shiny/Complainer)
