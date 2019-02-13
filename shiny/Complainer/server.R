@@ -1,20 +1,14 @@
 library(shiny)
 library(shinyjs)
 
-library(ggplot2)
-#library(readr)
-#library(RDSTK)
-#library(Matrix)
-#library(dplyr)
 library(forcats)
 library(tm)
 library(stopwords)
 library(caTools)
-#library(tidytext)
-#library(Rfast)
 library(philentropy)
+library(ngram)
 
-set.seed(123)
+#set.seed(123)
 
 ## Reading in Data 
 numTopics <- 12 # 7, 10 or 30
@@ -146,7 +140,7 @@ shinyServer(function(input, output, session) {
       issuesFoundText <- full_sorted_issues_list[probableIssues]
       #print (paste("issuesFoundText: ", issuesFoundText))
       
-      message <- "It seems that you are having the following issues with one of the financial institutions:<ul>"
+      message <- "It seems that you are having one or more of the following issues with one of the financial institutions:<ul>"
       for (issue in issuesFoundText) {
         message <- paste0(message, "<li>", issue, "</li>")
       }
