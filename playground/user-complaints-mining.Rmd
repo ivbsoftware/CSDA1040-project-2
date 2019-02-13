@@ -1,7 +1,7 @@
 ---
 title: "User Complaints Mining"
-author: "gor Baranov, Michael Parravani, Ariana Biagi, Grace Tsai"
-date: "February 4, 2019"
+author: "Igor Baranov, Michael Parravani, Ariana Biagi, Hui Fang Cai"
+date: "February 12, 2019"
 output:
   pdf_document: default
   html_document:
@@ -21,7 +21,6 @@ library(tm)
 library(stopwords)
 library(caTools)
 library(tidytext)
-#library(Rfast)
 library(philentropy)
 
 set.seed(777)
@@ -49,14 +48,17 @@ knit_hooks$set(output = function(x, options) {
 #this.dir <- dirname(rstudioapi::getActiveDocumentContext()$path)
 #setwd(this.dir)
 ```
+Introduction 
+
+Customer complaints give businesse valuable information about how they need to improve. This project uses Text Mining techniques to  extract useful, interesting and hidden information from consumers'narrative complaints from Consumer Financial Protection Bureau. This might be used to help financial institutions improve the quality of their services and enchance their competitive capacity in the market.
+
+The data used in this project can be downloaded from Kaggle's [Consumer Complaints Database -Financial Services complaints ](https://www.kaggle.com/sebastienverpile/consumercomplaintsdata/downloads/Consumer_Complaints.csv).
+(81,940 rows x 18 columns) In this project,all of no complaints (missing values) and unnecssary columns are removed for the analysis. 
 
 # Preparing data
 ## Load and clean the customer complaints data
 
-The data should be downloaded from Kaggle's [Consumer Complaints Database](https://www.kaggle.com/sebastienverpile/consumercomplaintsdata/downloads/Consumer_Complaints.csv/1).
-
-Loading and removing rows with no complaint narrative and unnecessary colimns:
-
+Loading and removing rows with no complaint narrative and unnecessary columns:
 ```{r message=FALSE, warning=FALSE}
 if(!file.exists("./user-complaints-mining/df.Rds")) {
   df <- read_csv(file="../data/Consumer_Complaints.csv.zip",col_names = TRUE)
@@ -95,7 +97,7 @@ ggplot() + aes(fct_infreq(df[df$Issue %in% full_sorted_issues_list[1:30],]$Issue
   ylab("Issue Complaints Frequency") + xlab("")+
   theme(axis.text.x = element_text(angle =90, hjust = 1))
 ```
-
+There is substantial drop off of use of different complaint codes
 \newpage
 ## Distribution of the most frequent "Sub-issue" complaints
 
@@ -106,6 +108,7 @@ ggplot() + aes(fct_infreq(df[df$`Sub-issue` %in% most_freq_subissues_list,]$`Sub
   ylab("Sub-Issue Complaints Frequency") + xlab("")+
   theme(axis.text.x = element_text(angle =90, hjust = 1))
 ```
+Again, fairly substantial drop off in use of subissue codes
 
 \newpage
 ## Distribution of the most frequent "Product" complaints
@@ -142,9 +145,9 @@ ggplot() + aes(fct_infreq(df[df$Company %in% most_freq_company_list,]$Company))+
 
 \newpage
 
-# Text Minig
+# Text Mining
 
-## Split data into test and train sets for Issue prediction
+## Split data into test and train sets
 
 ```{r}
 issuesToPredict <- 12
@@ -173,6 +176,8 @@ ggplot() + aes(train_full$wordcount)+ geom_histogram(binwidth=10, colour="black"
   scale_x_continuous(limits = c(0, 500))
 ```
 
+You can see that generally the complaints are fairly short (<150 words), but the distribution leads to much longer complaints - upwards of 500 words long.
+
 ```{r}
 train <- train_full[(train_full$wordcount >= stats[["1st Qu."]] & train_full$wordcount <= stats[["3rd Qu."]]),]
 train <- sample_n(train, 15000)
@@ -183,10 +188,7 @@ train$id <- c(1:nrow(train))
 
 ## Word analysis 
 
-Building a corpus, which is a collection of text documents VectorSource specifies that the source is character vectors.After that, the corpus needs a couple of transformations, 
-including changing letters to lower case, removing punctuations/numbers 
-and removing stop words. The general English stop-word list is tailored by adding some words specific to the documents in question.
-
+Building a corpus, which is a collection of text documents VectorSource specifies that the source is character vectors.After that, the corpus needs a couple of transformations, including changing letters to lower case, removing punctuations/numbers and removing stop words. The general English stop-word list is tailored by adding some words specific to the documents in question.
 
 ```{r message=FALSE, warning=FALSE, linewidth = 90}
 if(!file.exists("./user-complaints-mining/myCorpus.Rds")) {
@@ -239,6 +241,7 @@ if(!file.exists("./user-complaints-mining/myDtm.Rds")) {
 }
 inspect(myDtm)
 ```
+Some of the more common terms - Credit, report, debt - are obvious given this is a set of complaints about financial institutions 
 
 \newpage
 ## Frequent Terms and Association
@@ -258,9 +261,11 @@ ggplot(dfTerms[order(-dfTerms$freq),][1:30,], aes(x = reorder(term, freq), y = f
 ```{r}
 findAssocs(myDtm, c('loan'), 0.3)
 ```
+There are no surprises here for the words associated with 'Loan'. Student, payment and interest are quite obvious. 
+
 \newpage 
 
-Building word cloud:
+## Building word cloud:
 
 ```{r figCl1, fig.height=5.5, fig.width=5.5, message=FALSE, warning=FALSE, paged.print=FALSE, fig.cap="Words Cloud of Complaints"}
 library(wordcloud)
@@ -270,6 +275,8 @@ myNames <- names(v)
 d <- data.frame(word=myNames, freq=v)
 wordcloud(d$word, d$freq, min.freq=20, scale=c(4,.2), max.words = 200)
 ```
+
+This is a more graphical representation of the horizontal bar chart shown above. 
 
 \newpage
 
@@ -430,6 +437,148 @@ for (i in 1:numOfTests) {
 (sum(diag(tbl)))/numOfTests
 ```
 \newpage
+
+#Other Model Attempts
+
+##Feature Engineering for Decision Tree & Random Forest
+```{r message=FALSE, warning=FALSE, linewidth = 90}
+#starting with original Train/Test split
+#prepare Train & Test data
+library(tidytext)
+library(reshape)
+
+#define sparcity allowance
+sparce.pct<-0.90 #picked a low number so my computer could process dataset. With more memory, this number could be higher
+
+dftrain<-train_full[-(8:9)]
+dftest<-test[-8]
+
+dftrain$train<-"y"
+dftest$train<-"n"
+
+colnames(dftest)==colnames(dftrain)
+
+
+df3<-rbind(dftrain,dftest)
+
+df3.corpus<-prepareCorpus(df3$`Consumer complaint narrative`)
+df3.corpus <- doSteming(df3.corpus)
+df3.dtm <- DocumentTermMatrix(df3.corpus, control = list(weighting=weightTfIdf, minWordLength = 1))
+df3.dtm<-removeSparseTerms(df3.dtm,sparce.pct)
+
+#put into dataframe using tidytext package
+df3.dtm.tidy<-tidy(df3.dtm)
+df3.dtm.tidy<-as.data.frame(df3.dtm.tidy)
+
+#have to rename docID column to contain caps so we can do the left join later
+colnames(df3.dtm.tidy)[1]<-"documentID"
+
+#cast into dataframe (similar to pivot table)
+df3.dtm.DF<-cast(df3.dtm.tidy, documentID ~ term)
+
+head(df3.dtm.DF)
+
+
+df3.dtm.DF$documentID<-as.integer(df3.dtm.DF$documentID)
+df3.dtm.DF<-as.data.frame(df3.dtm.DF)
+df3<-as.data.frame(df3)
+
+#add a sequence to the original data in order to left-join to new dataset
+df3$ID <- seq.int(nrow(df3))
+
+#left join the original df3 to dtm df
+df3.df<-left_join(df3, df3.dtm.DF, by = c("ID"="documentID"))
+
+df3.df<-df3.df[,!names(df3.df) %in% c("Product","Sub-product","Sub-issue","Consumer complaint narrative","Company","issueId","ID","document")]
+
+
+
+#convert anything that's not "top issue" to "Other"
+most_freq_issues_list <- levels(fct_infreq(df$Issue))[1:30]
+most_freq_issues_list<-as.list(most_freq_issues_list)
+tmp2<-!df3.df$Issue %in% most_freq_issues_list
+df3.df$Issue<-as.character(df3.df$Issue)
+df3.df$Issue[tmp2]<-"Other Issue"
+df3.df$Issue<-as.factor(df3.df$Issue)
+
+
+#NA's to 0s
+df3.df[is.na(df3.df)] <- 0
+
+train.df<-df3.df[df3.df$train=="y",]
+train.df<-train.df[-2]
+test.df<-df3.df[df3.df$train=="n",]
+test.df<-test.df[-2]
+```
+
+##Decision Tree
+```{r message=FALSE, warning=FALSE, linewidth = 90}
+library(C50)
+
+## Control for C5.0 Model
+C5.0Control(subset=TRUE,bands=2,winnow=TRUE,noGlobalPruning=FALSE,CF=0.25,minCases=2,label="C5.0 Outcome")## Train Model using C5.0
+
+##Train the Data
+train.c50=C5.0(train.df[,-which(colnames(train.df)=="Issue")],train.df$Issue,trials=10,rules=FALSE,control=C5.0Control(),costs=NULL)
+
+##Prediction on Test Data and Train Data
+testPred.c50=predict(object=train.c50,newdata=test.df[,-which(colnames(train.df)=="Issue")],trials=1,type="class")
+
+
+confMat <- table(test.df$Issue, testPred.c50)
+accuracy <- sum(diag(confMat)/sum(confMat))
+print(accuracy) #41.3% Accuracy
+```
+Decision tree has a 41% accuracy. Not great.
+
+Lets try 5-fold cross validation (my computer cannot converge with 10)
+
+##5fold Cross Validation Decision Tree
+```{r}
+library(caret)
+train_control <- trainControl(method = 'cv', number = 5)
+dt.grid <- expand.grid(.cp=0.0)
+
+dt_5k <- train(Issue ~ ., 
+              data=train.df, 
+              method = 'rpart', 
+              trControl = train_control, 
+              metric='Accuracy', 
+              tuneGrid = dt.grid)
+
+t_pred <- predict(dt_5k, test.df,type = 'raw')
+confMat <- table(test.df$Issue, t_pred)
+accuracy <- sum(diag(confMat)/sum(confMat))
+print(accuracy) #40.7% Accuracy
+```
+40.7% accuracy -> lower than the decision tree. Likely to do with the tuning parameters. 
+
+A random forest model was run in a separate file, with a resulting accuracy of 49.2%. This was run again within this file, but took too long to converge given the deadline to submit. The code below is for the model but is all commented out so the final report can be finalized. 
+
+##Random Forest Model
+```{r message=FALSE, warning=FALSE, linewidth = 90}
+
+#library(party)
+#test.dfp<-test.df[,!names(test.df) %in% c("Issue")]
+#test.dfp[is.na(test.dfp)]<-0
+
+
+#rf.grid <- expand.grid(.mtry=5.0)
+#rf_Out_1 <- train(Issue ~ ., 
+#              train.df, 
+#              ntrees=150,
+#              method = "rf", 
+#             # trControl = train_control, 
+#              tuneGrid = rf.grid)
+
+#rf.pred<-predict(rf_Out_1, test.dfp, type = 'raw')
+
+#confMat <- table(test.df$Issue, rf.pred)
+#accuracy <- sum(diag(confMat)/sum(confMat))
+#print(accuracy) #49% accuracy.
+```
+
+
 # Prepare data for use in Shiny App
 
 ## Save random test complaints from the set of 'issuesToPredict'
@@ -445,3 +594,14 @@ sampleComplaints <- sampleComplaints[
      sampleComplaints$wordcount <= stats[["3rd Qu."]]),]
 saveRDS(df, file = "./user-complaints-mining/sampleComplaints.Rds")
 ```
+
+
+
+#Deployment
+The long term deployment of this will be to channel complaints to appropriate product teams basied on the context of the complaint. Deploying it as an app such as this for a user to submit their complaint into will be sufficient.
+
+New data can be collected with each complaint call. If the service desk clerk does not forward it off to someone else, then the label was appropriate. The model can be monitored with the number of "forwards" that come through the service desk clerks. If this number gets too high (10%?) then a model can be re-trained. 
+
+##Link to Shiny App
+https://ivbsoftware.shinyapps.io/Complainer/
+
